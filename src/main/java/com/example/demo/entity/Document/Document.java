@@ -1,5 +1,6 @@
 package com.example.demo.entity.Document;
 
+import com.example.demo.constant.FileType;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -38,14 +39,14 @@ public class Document {
     private String fileUrl;
 
     @Column(name = "file_type", length = 20)
-    @Size(max = 20)
-    private String fileType; // PDF, DOCX
+    @Enumerated(EnumType.STRING)
+    private FileType fileType; // PDF, DOCX
 
     @Column(name = "course_id")
     private Long courseId;
 
-    @Column(name = "lesson_id")
-    private Long lessonId;
+//    @Column(name = "lesson_id")
+//    private Long lessonId;
 
     @Column(name = "uploaded_by", nullable = false)
     @NotNull

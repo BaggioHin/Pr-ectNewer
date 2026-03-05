@@ -38,6 +38,15 @@ public class SubjectController {
                 .result(subjectService.getListSubject(page, size))
                 .build();
     }
+    //    Get Subjects by courseId
+    @GetMapping("/by-course/{courseId}")
+    ApiResponse<PageResponse<SubjectResponse>> getSubjectsByCourseId(@PathVariable Long courseId,
+                                                                     @RequestParam(defaultValue = "0") int page,
+                                                                     @RequestParam(defaultValue = "10") int size){
+        return ApiResponse.<PageResponse<SubjectResponse>>builder()
+                .result(subjectService.getSubjectsByCourseId(courseId, page, size))
+                .build();
+    }
     //    Edit Subject
     @PutMapping("/{id}")
     ApiResponse<SubjectResponse> editSubject(@PathVariable Long id,@RequestBody SubjectRequest SubjectRequest){

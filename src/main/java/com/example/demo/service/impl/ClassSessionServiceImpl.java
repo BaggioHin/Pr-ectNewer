@@ -102,6 +102,12 @@ public class ClassSessionServiceImpl implements ClassSessionService {
         if (request.getDate() != null) {
             session.setDate(request.getDate());
         }
+        if (request.getStartTime() != null) {
+            session.setStartTime(request.getStartTime());
+        }
+        if (request.getEndTime() != null) {
+            session.setEndTime(request.getEndTime());
+        }
         if (request.getTopic() != null) {
             session.setTopic(request.getTopic());
         }
@@ -115,6 +121,8 @@ public class ClassSessionServiceImpl implements ClassSessionService {
                 .id(session.getId())
                 .classScheduleId(session.getClassSchedule() != null ? session.getClassSchedule().getId() : null)
                 .date(session.getDate())
+                .startTime(session.getStartTime())
+                .endTime(session.getEndTime())
                 .topic(session.getTopic())
                 .statusClassSession(session.getStatusClassSession())
                 .build();

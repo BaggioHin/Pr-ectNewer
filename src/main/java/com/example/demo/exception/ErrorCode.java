@@ -26,7 +26,12 @@ public enum ErrorCode {
     ENROLLMENT_EXISTED(1017,"Enrollment already exists", HttpStatus.BAD_REQUEST),
     COURSECLASS_CLOSED(1018,"CourseClass is closed", HttpStatus.BAD_REQUEST),
     COURSECLASS_FULL(1019,"CourseClass is full", HttpStatus.BAD_REQUEST),
-    INVALID_STATUS(1020,"Invalid status", HttpStatus.BAD_REQUEST)
+    INVALID_STATUS(1020,"Invalid status", HttpStatus.BAD_REQUEST),
+    DOCUMENT_FILE_REQUIRED(1021, "Document file is required", HttpStatus.BAD_REQUEST),
+    DOCUMENT_FILE_TYPE_NOT_SUPPORTED(1022, "Only PDF and DOCX files are supported", HttpStatus.BAD_REQUEST),
+    DOCUMENT_TEXT_EXTRACTION_FAILED(1023, "Cannot extract text from file", HttpStatus.BAD_REQUEST),
+    DOCUMENT_CONTENT_EMPTY(1024, "Document content is empty after extraction", HttpStatus.BAD_REQUEST),
+    DOCUMENT_NOT_FOUND(1025, "Document not found", HttpStatus.NOT_FOUND)
     ;
 
     ErrorCode(int code, String message, HttpStatusCode statusCode) {

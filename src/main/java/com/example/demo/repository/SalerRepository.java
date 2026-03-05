@@ -10,4 +10,6 @@ import org.springframework.data.repository.query.Param;
 public interface SalerRepository extends JpaRepository<Saler, Long> {
     @Query("select max(s.code) from Saler s where s.code like concat(:prefix, '%')")
     String findMaxSalerCodeByPrefix(@Param("prefix") String prefix);
+
+    Saler findByUser_Id(Long userId);
 }

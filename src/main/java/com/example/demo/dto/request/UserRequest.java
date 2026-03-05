@@ -20,7 +20,7 @@ public class UserRequest {
     private LocalDate dob;
     private String email;
     private String phone;
-    private String avatar;
+//    private String avatar;
     private String bio;
     private CreateType role;
     private Long CreatedBy;

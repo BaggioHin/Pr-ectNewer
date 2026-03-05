@@ -16,12 +16,18 @@ public interface UserMapper {
     @Mapping(source = "user.phone", target = "phone")
     @Mapping(source = "user.email", target = "email")
     @Mapping(source = "user.id", target = "id")
+    @Mapping(source = "avatarUrl", target = "avatar")
     List<UserResponse> userToUserResponses(List<UserProfile> userProfiles);
 
 
     @Mapping(source = "user.phone", target = "phone")
     @Mapping(source = "user.email", target = "email")
+    @Mapping(source = "avatarUrl", target = "avatar")
     UserResponse userToUserResponse(UserProfile userProfiles);
+
+    default String map(Long value) {
+        return value == null ? null : value.toString();
+    }
 
 //    @Mapping(target = "id", ignore = true)
 //    @Mapping(target = "password", ignore = true)

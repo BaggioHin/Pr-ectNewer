@@ -11,16 +11,27 @@ import com.example.demo.entity.loginAndProcess.Enrollment;
 import com.example.demo.entity.loginAndProcess.StudentProgress;
 import com.example.demo.entity.loginAndProcess.StudentProgressId;
 import com.example.demo.entity.people.Student;
+import com.example.demo.entity.sales.Saler;
+import com.example.demo.entity.statistics.CourseStudentStats;
+import com.example.demo.entity.statistics.MonthlyRevenueStats;
+import com.example.demo.entity.statistics.SalerRevenueStats;
+import com.example.demo.entity.sales.SalerTransaction;
 import com.example.demo.exception.AppException;
 import com.example.demo.exception.ErrorCode;
 import com.example.demo.mapper.CourseClassMapper;
 import com.example.demo.mapper.EnrollmentMapper;
 import com.example.demo.repository.CourseClassRepository;
+import com.example.demo.repository.CourseStudentStatsRepository;
 import com.example.demo.repository.EnrollmentRepository;
+import com.example.demo.repository.MonthlyRevenueStatsRepository;
+import com.example.demo.repository.SalerRevenueStatsRepository;
+import com.example.demo.repository.SalerTransactionRepository;
+import com.example.demo.repository.SalerRepository;
 import com.example.demo.repository.StudentProgressRepository;
 import com.example.demo.repository.StudentRepository;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.service.k1.EnrollmentService;
+import com.example.demo.service.k1.AdminStatsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -57,6 +68,18 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     StudentRepository studentRepository;
     @Autowired
     StudentProgressRepository studentProgressRepository;
+    @Autowired
+    AdminStatsService adminStatsService;
+    @Autowired
+    MonthlyRevenueStatsRepository monthlyRevenueStatsRepository;
+    @Autowired
+    CourseStudentStatsRepository courseStudentStatsRepository;
+    @Autowired
+    SalerRevenueStatsRepository salerRevenueStatsRepository;
+    @Autowired
+    SalerTransactionRepository salerTransactionRepository;
+    @Autowired
+    SalerRepository salerRepository;
 
     @Override
     @PreAuthorize("hasAuthority('ADMIN') and hasAuthority('SALER')")
@@ -124,6 +147,10 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             throw new AppException(ErrorCode.COURSECLASS_FULL);
         }
 
+        Saler saler = resolveSaler(userCreate);
+        if (saler == null) {
+            throw new AppException(ErrorCode.IMFORMATION_NULL);
+        }
         Enrollment enrollment = new Enrollment();
         enrollment.setStudent(student);
         enrollment.setCourseClass(courseClass);
@@ -131,9 +158,14 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         enrollment.setEnrolledAt(LocalDateTime.now());
         enrollment.setUpdatedAt(LocalDate.now());
         enrollment.setEndAt(courseClass.getEndDay());
-        enrollment.setCreateById(userCreate.getSale().getCode());
+        enrollment.setCreateById(saler != null ? saler.getCode() : null);
         Enrollment saved = enrollmentRepository.save(enrollment);
         createStudentProgressIfMissing(student, courseClass);
+        updateMonthlyRevenueStats(saved);
+        updateCourseStudentStats(saved);
+        updateSalerRevenueStats(userCreate, saved);
+        recordSalerTransaction(userCreate, saved);
+        adminStatsService.refreshMonthlyStats(saved.getEnrolledAt());
         return toResponse(saved);
     }
 
@@ -146,6 +178,10 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         enrollment.setStatus(nextStatus);
         enrollment.setUpdatedAt(LocalDate.now());
         Enrollment saved = enrollmentRepository.save(enrollment);
+        adminStatsService.refreshMonthlyStats(LocalDateTime.now());
+        if (saved.getEnrolledAt() != null) {
+            adminStatsService.refreshMonthlyStats(saved.getEnrolledAt());
+        }
         return toResponse(saved);
     }
 
@@ -182,5 +218,134 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         progress.setCompletionPercent(0.0);
         progress.setUpdatedAt(LocalDateTime.now());
         studentProgressRepository.save(progress);
+    }
+
+    private void updateMonthlyRevenueStats(Enrollment enrollment) {
+        if (enrollment == null || enrollment.getEnrolledAt() == null) {
+            return;
+        }
+        Long price = resolveCoursePrice(enrollment);
+        if (price == null) {
+            return;
+        }
+        LocalDateTime enrolledAt = enrollment.getEnrolledAt();
+        int year = enrolledAt.getYear();
+        int month = enrolledAt.getMonthValue();
+
+        MonthlyRevenueStats stats = monthlyRevenueStatsRepository
+                .findByStatYearAndStatMonth(year, month)
+                .orElseGet(() -> MonthlyRevenueStats.builder()
+                        .statYear(year)
+                        .statMonth(month)
+                        .totalRevenue(0L)
+                        .build());
+
+        stats.setTotalRevenue(stats.getTotalRevenue() + price);
+        monthlyRevenueStatsRepository.save(stats);
+    }
+
+    private void updateCourseStudentStats(Enrollment enrollment) {
+        if (enrollment == null || enrollment.getCourseClass() == null) {
+            return;
+        }
+        var course = enrollment.getCourseClass().getCourse();
+        if (course == null) {
+            return;
+        }
+        CourseStudentStats stats = courseStudentStatsRepository
+                .findByCourse(course)
+                .orElseGet(() -> CourseStudentStats.builder()
+                        .course(course)
+                        .totalStudents(0L)
+                        .build());
+        stats.setTotalStudents(stats.getTotalStudents() + 1);
+        courseStudentStatsRepository.save(stats);
+    }
+
+    private void updateSalerRevenueStats(User userCreate, Enrollment enrollment) {
+        if (userCreate == null || enrollment == null) {
+            return;
+        }
+        var saler = resolveSaler(userCreate);
+        if (saler == null) {
+            return;
+        }
+        Long price = resolveCoursePrice(enrollment);
+        if (price == null) {
+            return;
+        }
+        SalerRevenueStats stats = salerRevenueStatsRepository
+                .findBySaler(saler)
+                .orElseGet(() -> SalerRevenueStats.builder()
+                        .saler(saler)
+                        .totalRevenue(0L)
+                        .totalDeals(0L)
+                        .build());
+        stats.setTotalRevenue(stats.getTotalRevenue() + price);
+        salerRevenueStatsRepository.save(stats);
+    }
+
+    private void recordSalerTransaction(User userCreate, Enrollment enrollment) {
+        if (userCreate == null || enrollment == null) {
+            return;
+        }
+        var saler = resolveSaler(userCreate);
+        if (saler == null) {
+            return;
+        }
+        Long price = resolveCoursePrice(enrollment);
+        if (price == null) {
+            return;
+        }
+        var student = enrollment.getStudent();
+        String studentName = null;
+        if (student != null && student.getUser() != null && student.getUser().getProfile() != null) {
+            studentName = student.getUser().getProfile().getName();
+        }
+        var courseClass = enrollment.getCourseClass();
+        String courseName = null;
+        if (courseClass != null && courseClass.getCourse() != null) {
+            courseName = courseClass.getCourse().getName();
+        }
+        Long studentId = student != null ? student.getUserId() : null;
+        Long courseClassId = courseClass != null ? courseClass.getId() : null;
+        if (studentName == null) {
+            studentName = "UNKNOWN";
+        }
+        if (courseName == null) {
+            courseName = "UNKNOWN";
+        }
+        SalerTransaction transaction = SalerTransaction.builder()
+                .saler(saler)
+                .studentName(studentName)
+                .studentId(studentId)
+                .courseName(courseName)
+                .courseClassId(courseClassId)
+                .amount(price)
+                .occurredAt(enrollment.getEnrolledAt() != null ? enrollment.getEnrolledAt() : LocalDateTime.now())
+                .build();
+        salerTransactionRepository.save(transaction);
+    }
+
+    private Saler resolveSaler(User userCreate) {
+        if (userCreate == null) {
+            return null;
+        }
+        var resolvedSaler = userCreate.getSale();
+        if (resolvedSaler != null) {
+            return resolvedSaler;
+        }
+        return salerRepository.findByUser_Id(userCreate.getId());
+    }
+
+    private Long resolveCoursePrice(Enrollment enrollment) {
+        if (enrollment == null || enrollment.getCourseClass() == null) {
+            return null;
+        }
+        var course = enrollment.getCourseClass().getCourse();
+        if (course == null || course.getPrice() == null) {
+            return null;
+        }
+        return course.getPrice();
     }
 }

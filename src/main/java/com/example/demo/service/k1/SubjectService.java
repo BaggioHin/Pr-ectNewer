@@ -14,6 +14,8 @@ public interface SubjectService {
 
      PageResponse<SubjectResponse> getListSubject(int page, int size);
 
+     PageResponse<SubjectResponse> getSubjectsByCourseId(Long courseId, int page, int size);
+
      SubjectResponse editSubject(Long id,SubjectRequest subjectRequest);
 
      SubjectResponse addSubject(SubjectRequest subjectRequest);

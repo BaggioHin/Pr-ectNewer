@@ -11,6 +11,7 @@ import com.example.demo.exception.ErrorCode;
 import com.example.demo.repository.CourseRepository;
 import com.example.demo.repository.CourseClassRepository;
 import com.example.demo.repository.SubjectRepository;
+import com.example.demo.service.k1.AuditLogService;
 import com.example.demo.service.k1.CourseService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -18,6 +19,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -32,6 +36,8 @@ public class CourseServiceImpl implements CourseService {
     private CourseClassRepository courseClassRepository;
     @Autowired
     private SubjectRepository subjectRepository;
+    @Autowired
+    private AuditLogService auditLogService;
 
     @Override
     public CourseResponse getCourseById(Long id) {
@@ -78,9 +84,15 @@ public class CourseServiceImpl implements CourseService {
     @Override
     @PreAuthorize("hasRole('ADMIN')")
     public CourseResponse addCourse(CourseRequest courseRequest) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = auth.getName();
         Course course = new Course();
         applyRequest(courseRequest, course);
+        if (course.getCode() == null || course.getCode().isBlank()) {
+            course.setCode(generateCourseCode());
+        }
         Course saved = courseRepository.save(course);
+        auditLogService.logCreate(null, saved.getName(), username);
         return toResponse(saved);
     }
 
@@ -92,34 +104,6 @@ public class CourseServiceImpl implements CourseService {
         courseRepository.delete(course);
         return "Delete successful!";
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     @Override
     public String addCourseClass(Long courseId, Long classId) {
@@ -177,10 +161,9 @@ public class CourseServiceImpl implements CourseService {
                 .code(course.getCode())
                 .name(course.getName())
                 .description(course.getDescription())
-                .startDate(course.getStartDate())
-                .endDate(course.getEndDate())
+                .totalSessions(course.getTotalSessions())
                 .statusCourse(course.getStatusCourse())
-                .credit(course.getCredit())
+                .credit(course.getPrice())
                 .build();
     }
 
@@ -188,26 +171,39 @@ public class CourseServiceImpl implements CourseService {
         if (request == null) {
             return;
         }
-        if (request.getCode() != null) {
-            course.setCode(request.getCode());
-        }
         if (request.getName() != null) {
             course.setName(request.getName());
         }
         if (request.getDescription() != null) {
             course.setDescription(request.getDescription());
         }
-        if (request.getStartDate() != null) {
-            course.setStartDate(request.getStartDate());
-        }
-        if (request.getEndDate() != null) {
-            course.setEndDate(request.getEndDate());
+        if (request.getTotalSessions() != null) {
+            course.setTotalSessions(request.getTotalSessions());
         }
         if (request.getStatusCourse() != null) {
             course.setStatusCourse(request.getStatusCourse());
         }
-        if (request.getCredit() != null) {
-            course.setCredit(request.getCredit());
+        if (request.getPrice() != null) {
+            course.setPrice(request.getPrice());
         }
+    }
+
+    private String generateCourseCode() {
+        String prefix = "CRS";
+        String maxCode = courseRepository.findMaxCodeByPrefix(prefix);
+        return nextSequentialCode(prefix, maxCode, 4);
+    }
+
+    private String nextSequentialCode(String prefix, String maxCode, int width) {
+        int next = 1;
+        if (maxCode != null && maxCode.startsWith(prefix)) {
+            String numericPart = maxCode.substring(prefix.length());
+            try {
+                next = Integer.parseInt(numericPart) + 1;
+            } catch (NumberFormatException ignored) {
+                next = 1;
+            }
+        }
+        return prefix + String.format("%0" + width + "d", next);
     }
 }

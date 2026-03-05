@@ -3,9 +3,7 @@ package com.example.demo.entity.classAndLearn;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
-import java.time.DayOfWeek;
-
-import java.time.LocalTime;
+import java.time.LocalDate;
 import java.util.List;
 
 @Entity
@@ -27,15 +25,15 @@ public class ClassSchedule {
     @OneToMany(mappedBy = "classSchedule")
     private List<ClassSession> classSessions;
 
-    @Enumerated(EnumType.STRING)
-    @NotNull
-    private DayOfWeek dayOfWeek;
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "class_schedule_slots", joinColumns = @JoinColumn(name = "class_schedule_id"))
+    private List<ClassScheduleSlot> slots;
 
     @NotNull
-    private LocalTime startTime;
+    private LocalDate startDate;
 
     @NotNull
-    private LocalTime endTime;
+    private LocalDate endDate;
     private String room;
 }
 

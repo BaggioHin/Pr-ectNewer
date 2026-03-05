@@ -21,6 +21,7 @@ import com.example.demo.repository.ExamRepository;
 import com.example.demo.repository.GradeRepository;
 import com.example.demo.repository.StudentRepository;
 import com.example.demo.repository.SubjectRepository;
+import com.example.demo.service.k1.AuditLogService;
 import com.example.demo.service.k1.ExamService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -53,13 +54,17 @@ public class ExamServiceImpl implements ExamService {
     @Autowired
     ExamResultRepository examResultRepository;
     @Autowired
+    AuditLogService auditLogService;
+    @Autowired
     GradeRepository gradeRepository;
     @Autowired
     StudentRepository studentRepository;
 
     @Override
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','TEACHER')")
     public ExamResponse createExam(ExamRequest request) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = auth.getName();
         if (request == null) {
             throw new AppException(ErrorCode.IMFORMATION_NULL);
         }
@@ -81,6 +86,8 @@ public class ExamServiceImpl implements ExamService {
         }
 
         Exam saved = examRepository.save(exam);
+        String subjectName = saved.getSubject() != null ? saved.getSubject().getName() : null;
+        auditLogService.logCreate(null, subjectName, username);
         return toResponse(saved);
     }
 

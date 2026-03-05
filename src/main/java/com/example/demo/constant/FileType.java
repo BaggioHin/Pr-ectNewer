@@ -1,5 +1,5 @@
 package com.example.demo.constant;
 
 public enum FileType {
-    PDF, DOCX , PPT
+    PDF, DOCX
 }

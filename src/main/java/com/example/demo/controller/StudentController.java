@@ -21,5 +21,4 @@ public class StudentController {
                 .result(studentService.getStudentByCourseClass(courseClassId))
                 .build();
     }
-
 }

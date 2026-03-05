@@ -7,16 +7,22 @@ import com.example.demo.dto.request.ConsultationRequestStatusRequest;
 import com.example.demo.dto.response.ConsultationRequestResponse;
 import com.example.demo.dto.response.PageResponse;
 import com.example.demo.entity.sales.ConsultationRequest;
+import com.example.demo.entity.sales.Saler;
 import com.example.demo.exception.AppException;
 import com.example.demo.exception.ErrorCode;
 import com.example.demo.repository.ConsultationRequestRepository;
-import com.example.demo.repository.UserRepository;
+import com.example.demo.repository.SalerRepository;
+import com.example.demo.repository.SalerRevenueStatsRepository;
+import com.example.demo.service.k1.AdminStatsService;
 import com.example.demo.service.k1.ConsultationRequestService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -31,7 +37,11 @@ public class ConsultationRequestServiceImpl implements ConsultationRequestServic
     @Autowired
     ConsultationRequestRepository consultationRequestRepository;
     @Autowired
-    UserRepository userRepository;
+    AdminStatsService adminStatsService;
+    @Autowired
+    SalerRepository salerRepository;
+    @Autowired
+    SalerRevenueStatsRepository salerRevenueStatsRepository;
 
     @Override
     public ConsultationRequestResponse getById(Long id) {
@@ -65,11 +75,6 @@ public class ConsultationRequestServiceImpl implements ConsultationRequestServic
         }
 
         ConsultationRequest entity = new ConsultationRequest();
-        if (request.getUserId() != null) {
-            var user = userRepository.findById(request.getUserId())
-                    .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
-            entity.setUser(user);
-        }
         entity.setPhone(resolvePhone(request.getPhone(), request.getMessage()));
         entity.setEmail(request.getEmail());
         entity.setMessage(request.getMessage());
@@ -80,18 +85,26 @@ public class ConsultationRequestServiceImpl implements ConsultationRequestServic
         entity.setStatus(ConsultationStatus.NEW);
 
         ConsultationRequest saved = consultationRequestRepository.save(entity);
+        adminStatsService.refreshMonthlyStats(saved.getCreatedAt());
         return toResponse(saved);
     }
 
     @Override
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('SALER','ADMIN')")
     public ConsultationRequestResponse updateStatus(Long id, ConsultationRequestStatusRequest request) {
+        var userId = SecurityContextHolder.getContext().getAuthentication().getPrincipal().getClass();
         ConsultationRequest entity = consultationRequestRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.IMFORMATION_NULL));
         if (request == null || request.getStatus() == null) {
             throw new AppException(ErrorCode.IMFORMATION_NULL);
         }
+        ConsultationStatus previousStatus = entity.getStatus();
         entity.setStatus(request.getStatus());
+        assignCurrentSalerIfApplicable(entity);
         ConsultationRequest saved = consultationRequestRepository.save(entity);
+        if (previousStatus != ConsultationStatus.WON && saved.getStatus() == ConsultationStatus.WON) {
+            incrementSalerDeals(saved.getAssignedSaler());
+        }
         return toResponse(saved);
     }
 
@@ -105,11 +118,57 @@ public class ConsultationRequestServiceImpl implements ConsultationRequestServic
                 .source(request.getSource())
                 .status(request.getStatus())
                 .typeReceive(request.getTypeReceive())
-                .assignedSalerId(request.getAssignedSaler() != null ? request.getAssignedSaler().getUserId() : null)
+                .assignedSalerId(request.getAssignedSaler() != null
+                        ? request.getAssignedSaler().getUser().getId()
+                        : null)
+                .assignedSalerName(resolveSalerName(request.getAssignedSaler()))
                 .closedAt(request.getClosedAt())
                 .createdAt(request.getCreatedAt())
                 .updatedAt(request.getUpdatedAt())
                 .build();
+    }
+
+    private void assignCurrentSalerIfApplicable(ConsultationRequest entity) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof Jwt jwt)) {
+            return;
+        }
+        boolean isSaler = auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_SALER".equals(a.getAuthority()));
+        if (!isSaler) {
+            return;
+        }
+        Long userId = jwt.getClaim("userId");
+        if (userId == null) {
+            throw new AppException(ErrorCode.UNAUTHENTICATED);
+        }
+        Saler saler = salerRepository.findByUser_Id(userId);
+        if (saler == null) {
+            throw new AppException(ErrorCode.IMFORMATION_NULL);
+        }
+        entity.setAssignedSaler(saler);
+    }
+
+    private void incrementSalerDeals(Saler saler) {
+        if (saler == null) {
+            return;
+        }
+        var stats = salerRevenueStatsRepository.findBySaler(saler)
+                .orElseGet(() -> com.example.demo.entity.statistics.SalerRevenueStats.builder()
+                        .saler(saler)
+                        .totalRevenue(0L)
+                        .totalDeals(0L)
+                        .build());
+        Long current = stats.getTotalDeals() != null ? stats.getTotalDeals() : 0L;
+        stats.setTotalDeals(current + 1);
+        salerRevenueStatsRepository.save(stats);
+    }
+
+    private String resolveSalerName(Saler saler) {
+        if (saler == null || saler.getUser() == null || saler.getUser().getProfile() == null) {
+            return null;
+        }
+        return saler.getUser().getProfile().getName();
     }
 
     private String resolvePhone(String phone, String message) {

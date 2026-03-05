@@ -8,6 +8,8 @@ import com.example.demo.service.k1.ScheduleService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/schedule")
 public class ScheduleController {
@@ -27,6 +29,20 @@ public class ScheduleController {
     ApiResponse<ScheduleResponse> getScheduleById(@PathVariable Long id) {
         return ApiResponse.<ScheduleResponse>builder()
                 .result(scheduleService.getScheduleById(id))
+                .build();
+    }
+
+    @GetMapping("/by-course-class/{courseClassId}")
+    ApiResponse<ScheduleResponse> getScheduleByCourseClassId(@PathVariable Long courseClassId) {
+        return ApiResponse.<ScheduleResponse>builder()
+                .result(scheduleService.getScheduleByCourseClassId(courseClassId))
+                .build();
+    }
+
+    @GetMapping("/me")
+    ApiResponse<List<ScheduleResponse>> getMySchedules() {
+        return ApiResponse.<List<ScheduleResponse>>builder()
+                .result(scheduleService.getMySchedules())
                 .build();
     }
 

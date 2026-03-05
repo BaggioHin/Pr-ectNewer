@@ -24,6 +24,7 @@ public class ConsultationRequestResponse {
     private ConsultationStatus status;
     private ConsultationTypeReceive typeReceive;
     private Long assignedSalerId;
+    private String assignedSalerName;
     private LocalDateTime closedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

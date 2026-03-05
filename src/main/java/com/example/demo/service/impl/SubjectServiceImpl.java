@@ -70,6 +70,26 @@ public class SubjectServiceImpl implements SubjectService {
     }
 
     @Override
+    public PageResponse<SubjectResponse> getSubjectsByCourseId(Long courseId, int page, int size) {
+        if (courseId == null) {
+            throw new AppException(ErrorCode.IMFORMATION_NULL);
+        }
+        Pageable pageable = PageRequest.of(page, size, Sort.by("id").descending());
+        Page<Subject> pageResult = subjectRepository.findByCourse_Id(courseId, pageable);
+        List<SubjectResponse> data = pageResult.getContent()
+                .stream()
+                .map(this::toResponse)
+                .toList();
+        return new PageResponse<>(
+                data,
+                pageResult.getNumber(),
+                pageResult.getSize(),
+                pageResult.getTotalElements(),
+                pageResult.getTotalPages()
+        );
+    }
+
+    @Override
     @PreAuthorize("hasRole('ADMIN')")
     public SubjectResponse editSubject(Long id,SubjectRequest subjectRequest) {
         if (subjectRequest == null) {
@@ -79,9 +99,6 @@ public class SubjectServiceImpl implements SubjectService {
         Subject subject = subjectRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.IMFORMATION_NULL));
 
-        if (subjectRequest.getCode() != null) {
-            subject.setCode(subjectRequest.getCode());
-        }
         if (subjectRequest.getName() != null) {
             subject.setName(subjectRequest.getName());
         }
@@ -101,11 +118,17 @@ public class SubjectServiceImpl implements SubjectService {
     @Override
     @PreAuthorize("hasRole('ADMIN')")
     public SubjectResponse addSubject(SubjectRequest subjectRequest) {
+        if (subjectRequest == null) {
+            throw new AppException(ErrorCode.IMFORMATION_NULL);
+        }
         Course course = courseRepository.findById(subjectRequest.getCourseId())
                 .orElseThrow(() -> new AppException(ErrorCode.IMFORMATION_NULL));
 
         Subject subject = new Subject();
-        subject.setCode(subjectRequest.getCode());
+        subject.setCode(generateSubjectCode());
+        if (subject.getCode() == null || subject.getCode().isBlank()) {
+            throw new AppException(ErrorCode.IMFORMATION_NULL);
+        }
         subject.setName(subjectRequest.getName());
         subject.setDescription(subjectRequest.getDescription());
         subject.setCourse(course);
@@ -134,5 +157,24 @@ public class SubjectServiceImpl implements SubjectService {
                 .description(subject.getDescription())
                 .courseId(subject.getCourse() != null ? subject.getCourse().getId() : null)
                 .build();
+    }
+
+    private String generateSubjectCode() {
+        String prefix = "SUB";
+        String maxCode = subjectRepository.findMaxCodeByPrefix(prefix);
+        return nextSequentialCode(prefix, maxCode, 4);
+    }
+
+    private String nextSequentialCode(String prefix, String maxCode, int width) {
+        int next = 1;
+        if (maxCode != null && maxCode.startsWith(prefix)) {
+            String numericPart = maxCode.substring(prefix.length());
+            try {
+                next = Integer.parseInt(numericPart) + 1;
+            } catch (NumberFormatException ignored) {
+                next = 1;
+            }
+        }
+        return prefix + String.format("%0" + width + "d", next);
     }
 }

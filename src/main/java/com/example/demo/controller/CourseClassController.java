@@ -21,10 +21,10 @@ public class CourseClassController {
     private CourseClassService courseClassService;
 
     @Operation(summary = "Get CourseClass by Id")
-    @GetMapping("/{id}")
-    ApiResponse<CourseClassResponse> getCourseClassById(@PathVariable Long id){
+    @GetMapping("/me")
+    ApiResponse<CourseClassResponse> getCourseClassById(){
         return ApiResponse.<CourseClassResponse>builder()
-                .result(courseClassService.getCourseClassById(id))
+                .result(courseClassService.getCourseClassById())
                 .build();
     }
 
@@ -45,6 +45,17 @@ public class CourseClassController {
             @RequestParam(defaultValue = "10") int size){
         return ApiResponse.<PageResponse<CourseClassResponse>>builder()
                 .result(courseClassService.getListCourseClass(page,size))
+                .build();
+    }
+
+    @Operation(summary = "Get CourseClass by courseId")
+    @GetMapping("/by-course/{courseId}")
+    ApiResponse<PageResponse<CourseClassResponse>> getCourseClassByCourseId(
+            @PathVariable Long courseId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size){
+        return ApiResponse.<PageResponse<CourseClassResponse>>builder()
+                .result(courseClassService.getCourseClassesByCourseId(courseId, page, size))
                 .build();
     }
 

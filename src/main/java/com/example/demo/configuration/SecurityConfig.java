@@ -28,7 +28,7 @@ public class SecurityConfig {
             "/api/products/check","/users", "/auth/token", "/auth/introspect", "/auth/logout", "/auth/refreshToken",
             "/admin/debug/auth","/admin/debug","/courses/{id}","/courses/search","/courses","/user",
             "/swagger-ui/**","/Subject/{id}","/Subject/{name}","/Subject/{page}",
-            "/v3/api-docs/**",
+            "/v3/api-docs/**","/users/"
     };
 
     @Autowired
@@ -41,6 +41,9 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.POST, "/consultation-requests").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/consultation-requests/**").hasAnyRole("SALER", "ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/consultation-requests/**").hasAnyRole("SALER", "ADMIN")
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .anyRequest().authenticated()
                 )
@@ -59,15 +62,12 @@ public class SecurityConfig {
     @Bean
     public UrlBasedCorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration corsConfiguration = new CorsConfiguration();
-//        corsConfiguration.addAllowedOriginPattern("*");
         corsConfiguration.addAllowedMethod("*");
         corsConfiguration.addAllowedHeader("*");
         corsConfiguration.setAllowedOrigins(
                 List.of("http://localhost:5173")
         );
         corsConfiguration.setAllowCredentials(true);
-
-//        corsConfiguration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", corsConfiguration);
@@ -88,7 +88,6 @@ public class SecurityConfig {
 //        jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(jwtGrantedAuthoritiesConverter);
         jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(jwt->{
             var authorities = scopesConverter.convert(jwt);
-//            authorities.addAll(specialityConverter.convert(jwt));
             return authorities;
         });
         return jwtAuthenticationConverter;

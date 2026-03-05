@@ -2,7 +2,6 @@ package com.example.demo.entity.courseAndAcademic;
 
 import com.example.demo.constant.StatusCourse;
 import com.example.demo.entity.classAndLearn.CourseClass;
-import com.example.demo.entity.loginAndProcess.Enrollment;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -10,9 +9,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.*;
 
-import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -39,15 +36,14 @@ public class Course {
     @Size(max = 2000)
     private String description;
 
-    private LocalDate startDate;
-    private LocalDate endDate;
+    private Integer totalSessions;
 
     @Enumerated(EnumType.STRING)
     @NotNull
     private StatusCourse statusCourse;
 
     @Min(0)
-    private Long credit;
+    private Long price;
 
     @OneToMany(mappedBy = "course")
     private List<CourseClass> classes = new ArrayList<>();

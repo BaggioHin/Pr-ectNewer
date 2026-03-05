@@ -37,7 +37,7 @@ public class SalerServiceImpl implements SalerService {
 
     @Override
     public PageResponse<SalerResponse> getAll(int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by("userId").descending());
+        Pageable pageable = PageRequest.of(page, size, Sort.by("id").descending());
         Page<Saler> pageResult = salerRepository.findAll(pageable);
         List<SalerResponse> data = pageResult.getContent()
                 .stream()
@@ -86,7 +86,7 @@ public class SalerServiceImpl implements SalerService {
 
     private SalerResponse toResponse(Saler saler) {
         return SalerResponse.builder()
-                .userId(saler.getUserId())
+                .userId(saler.getUser() != null ? saler.getUser().getId() : null)
                 .code(saler.getCode())
                 .team(saler.getTeam())
                 .build();

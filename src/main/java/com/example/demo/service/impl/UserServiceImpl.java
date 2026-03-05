@@ -2,8 +2,10 @@ package com.example.demo.service.impl;
 
 import com.example.demo.constant.CreateType;
 import com.example.demo.constant.StatusUser;
+import com.example.demo.dto.request.CloudinaryUploadResult;
 import com.example.demo.dto.request.UserRequest;
 import com.example.demo.dto.response.PageResponse;
+import com.example.demo.dto.response.UserMeResponse;
 import com.example.demo.dto.response.UserResponse;
 import com.example.demo.entity.authAndUser.Role;
 import com.example.demo.entity.authAndUser.User;
@@ -16,6 +18,9 @@ import com.example.demo.exception.ErrorCode;
 import com.example.demo.mapper.UserMapper;
 import com.example.demo.mapper.UserProfileMapper;
 import com.example.demo.repository.*;
+import com.example.demo.service.CloudinaryService;
+import com.example.demo.service.k1.AuditLogService;
+import com.example.demo.service.k1.AdminStatsService;
 import com.example.demo.service.k1.UserService;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,14 +33,19 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 
 @Service
+@Slf4j
 public class UserServiceImpl implements UserService {
     @Autowired
     UserRepository userRepository;
@@ -55,8 +65,15 @@ public class UserServiceImpl implements UserService {
     SalerRepository salerRepository;
     @Autowired
     RoleRepository roleRepository;
+    @Autowired
+    CloudinaryService cloudinaryService;
+    @Autowired
+    AuditLogService auditLogService;
+    @Autowired
+    AdminStatsService adminStatsService;
 
     @Override
+    @PreAuthorize("isAuthenticated() and (#id == authentication.principal.claims['userId'] or hasAuthority('ADMIN'))")
     public UserResponse getUserByid(Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
@@ -64,16 +81,43 @@ public class UserServiceImpl implements UserService {
         if (profile == null) {
             throw new AppException(ErrorCode.USERPROFILE_NOT_EXISTED);
         }
-        return userMapper.userToUserResponse(profile);
+        UserResponse response = userMapper.userToUserResponse(profile);
+        response.setId(resolveUserCode(user));
+        return response;
     }
 
     @Override
+    @PreAuthorize("hasAnyRole('ADMIN','SALER')")
     public List<UserResponse> getUserByName(String name) {
         List<UserProfile> userProfile = userProfileRepository.findByName(name);
-        return userMapper.userToUserResponses(userProfile);
+        List<UserResponse> responses = userMapper.userToUserResponses(userProfile);
+        for (int i = 0; i < responses.size(); i++) {
+            UserProfile profile = userProfile.get(i);
+            UserResponse response = responses.get(i);
+            response.setId(resolveUserCode(profile.getUser()));
+        }
+        return responses;
     }
 
     @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    public List<UserResponse> getUserByRole(CreateType role) {
+        if (role == null) {
+            throw new AppException(ErrorCode.INVALID_STATUS);
+        }
+        List<UserProfile> userProfiles = userProfileRepository.findByRoleName(role.name());
+        List<UserResponse> responses = userMapper.userToUserResponses(userProfiles);
+        for (int i = 0; i < responses.size(); i++) {
+            UserProfile profile = userProfiles.get(i);
+            UserResponse response = responses.get(i);
+            String code = resolveUserCodeByRole(profile, role);
+            response.setId(code);
+        }
+        return responses;
+    }
+
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
     public PageResponse<UserResponse> getListUser(int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("id").descending());
 
@@ -81,6 +125,12 @@ public class UserServiceImpl implements UserService {
 
         List<UserResponse> data =
                 userMapper.userToUserResponses(pageResult.getContent());
+        List<UserProfile> profiles = pageResult.getContent();
+        for (int i = 0; i < data.size(); i++) {
+            UserProfile profile = profiles.get(i);
+            UserResponse response = data.get(i);
+            response.setId(resolveUserCode(profile.getUser()));
+        }
 
         return new PageResponse<>(
                 data,
@@ -92,10 +142,34 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-//    @PreAuthorize("hasAuthority('SCOPE_STUDENT')")
+    @PreAuthorize("isAuthenticated()")
+    public UserMeResponse getMyInfo() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        Jwt jwt = (Jwt) auth.getPrincipal();
+        Long userId = jwt.getClaim("userId");
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
+
+        Set<String> roles = user.getRoles().stream()
+                .map(Role::getName)
+                .collect(Collectors.toSet());
+
+        return UserMeResponse.builder()
+                .username(user.getUsername())
+                .roles(roles)
+                .build();
+    }
+
+    @Override
     @PreAuthorize("isAuthenticated()")
     public String editUser(UserRequest userRequest) {
-        if (userRepository.existsByUsername(userRequest.getUsername())) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        Jwt jwt = (Jwt) auth.getPrincipal();
+        Long userId = jwt.getClaim("userId");
+
+        if (userRequest.getUsername() != null &&
+                userRepository.existsByUsernameAndIdNot(userRequest.getUsername(), userId)) {
             throw new AppException(ErrorCode.USERNAME_EXISTED);
         }
 
@@ -106,10 +180,6 @@ public class UserServiceImpl implements UserService {
         if (userRequest.getPhone() != null && userRepository.existsByPhone(userRequest.getPhone())) {
             throw new AppException(ErrorCode.PHONE_NUMBER_EXISTED);
         }
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        Jwt jwt = (Jwt) auth.getPrincipal();
-        Long userId = jwt.getClaim("userId");
-
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
 
@@ -118,6 +188,7 @@ public class UserServiceImpl implements UserService {
         userMapper.requestToUser(userRequest, user);
         userProfileMapper.requestToUserProfile(userRequest, userProfile);
         user.setUpdatedAt(LocalDateTime.now());
+
         userRepository.save(user);
         userProfileRepository.save(userProfile);
         return "Edit successful!";
@@ -125,8 +196,13 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    @PreAuthorize("hasRole('ADMIN')")
-    public String addUser(UserRequest userRequest) {
+    @PreAuthorize("hasAnyRole('ADMIN','SALER')")
+    public Long addUser(UserRequest userRequest) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        Jwt jwt = (Jwt) auth.getPrincipal();
+        Long creatorId = jwt.getClaim("userId");
+        String username = auth.getName();
+
         if (userRequest.getUsername() == null || userRequest.getUsername().isBlank()) {
             throw new AppException(ErrorCode.USERNAME_INVALID);
         }
@@ -135,6 +211,7 @@ public class UserServiceImpl implements UserService {
             throw new AppException(ErrorCode.INVALID_PASSWORD);
         }
 
+        System.out.println("ROLE:"+userRequest.getRole());
         if (userRequest.getRole() == null) {
             throw new AppException(ErrorCode.INVALID_STATUS);
         }
@@ -168,7 +245,7 @@ public class UserServiceImpl implements UserService {
         Role role = roleRepository.findById(roleName)
                 .orElseThrow(() -> new AppException(ErrorCode.INVALID_STATUS));
         user.getRoles().add(role);
-        user.setCreatedBy(userRequest.getCreatedBy());
+        user.setCreatedBy(creatorId);
 
         Saler saler = null;
         if (userRequest.getRole() == CreateType.STUDENT) {
@@ -183,17 +260,54 @@ public class UserServiceImpl implements UserService {
             teacher.setTeacherCode(generateTeacherCode());
             user.setTeacher(teacher);
         }
-        if (userRequest.getRole() == CreateType.SALE) {
+        if (userRequest.getRole() == CreateType.SALER) {
             saler = new Saler();
             saler.setUser(user);
             saler.setCode(generateSalerCode());
+            user.setSale(saler);
         }
+
         userRepository.save(user);
         if (saler != null) {
             salerRepository.save(saler);
         }
+//        String roleName1 = userRequest.getRole() == null ? null : userRequest.getRole().name();
+        auditLogService.logCreate(roleName, user.getUsername(), username);
+        if (userRequest.getRole() == CreateType.STUDENT) {
+            adminStatsService.refreshMonthlyStats(user.getCreatedAt());
+        }
 
-        return "Add successful!";
+        Long studentId = user.getStudent() != null ? user.getStudent().getUserId() : null;
+        log.info("Created student id={}", studentId);
+        return studentId;
+    }
+
+    @Override
+    @Transactional
+    @PreAuthorize("isAuthenticated()")
+    public String uploadAvatar(MultipartFile avatar) {
+        if (avatar == null || avatar.isEmpty()) {
+            throw new AppException(ErrorCode.IMFORMATION_NULL);
+        }
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        Jwt jwt = (Jwt) auth.getPrincipal();
+        Long userId = jwt.getClaim("userId");
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
+
+        CloudinaryUploadResult result =
+                cloudinaryService.uploadAvatar(avatar, userId.toString());
+
+        UserProfile userProfile = user.getProfile();
+        userProfile.setAvatarUrl(result.getUrl());
+        userProfile.setAvatarPublicId(result.getPublicId());
+        user.setUpdatedAt(LocalDateTime.now());
+
+        userRepository.save(user);
+        userProfileRepository.save(userProfile);
+        return "Upload avatar successful!";
     }
 
     private String generateStudentCode() {
@@ -235,5 +349,48 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
         userRepository.delete(user);
         return "Delete successful!";
+    }
+
+    private String resolveUserCodeByRole(UserProfile profile, CreateType role) {
+        if (profile == null || profile.getUser() == null) {
+            return null;
+        }
+        return switch (role) {
+            case STUDENT -> {
+                yield profile.getUser().getStudent() == null
+                        ? null
+                        : profile.getUser().getStudent().getStudentCode();
+            }
+            case TEACHER -> {
+                yield profile.getUser().getTeacher() == null
+                        ? null
+                        : profile.getUser().getTeacher().getTeacherCode();
+            }
+            case SALER -> {
+                yield profile.getUser().getSale() == null
+                        ? null
+                        : profile.getUser().getSale().getCode();
+            }
+            case ADMIN -> null;
+        };
+    }
+
+    private String resolveUserCode(User user) {
+        if (user == null) {
+            return null;
+        }
+        Set<String> roles = user.getRoles().stream()
+                .map(Role::getName)
+                .collect(Collectors.toSet());
+        if (roles.contains(CreateType.STUDENT.name())) {
+            return user.getStudent() == null ? null : user.getStudent().getStudentCode();
+        }
+        if (roles.contains(CreateType.TEACHER.name())) {
+            return user.getTeacher() == null ? null : user.getTeacher().getTeacherCode();
+        }
+        if (roles.contains(CreateType.SALER.name())) {
+            return user.getSale() == null ? null : user.getSale().getCode();
+        }
+        return user.getId() == null ? null : user.getId().toString();
     }
 }

@@ -7,11 +7,13 @@ import com.example.demo.dto.response.PageResponse;
 import java.util.List;
 
 public interface CourseClassService {
-    CourseClassResponse getCourseClassById(Long id);
+    CourseClassResponse getCourseClassById();
 
     List<CourseClassResponse> getCourseClassByName(String name);
 
     PageResponse<CourseClassResponse> getListCourseClass(int page,int size);
+
+    PageResponse<CourseClassResponse> getCourseClassesByCourseId(Long courseId, int page, int size);
 
     CourseClassResponse editCourseClass(Long id,CourseClassRequest courseClassRequest);
 

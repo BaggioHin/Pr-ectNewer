@@ -1,12 +1,10 @@
 package com.example.demo.service.ai;
 
-import com.example.demo.entity.Document.DocumentContent;
-import com.example.demo.entity.Document.DocumentEmbedding;
-import com.example.demo.repository.DocumentContentRepository;
-import com.example.demo.repository.DocumentEmbeddingRepository;
+import com.example.demo.entity.Document.Document;
+import com.example.demo.entity.Document.DocumentChunk;
+import com.example.demo.repository.DocumentChunkRepository;
 import com.example.demo.repository.projection.DocumentEmbeddingSearchRow;
 import jakarta.transaction.Transactional;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -18,47 +16,43 @@ public class DocumentEmbeddingService {
     private static final int DEFAULT_CHUNK_SIZE = 1000;
     private static final int DEFAULT_CHUNK_OVERLAP = 150;
 
-    @Autowired
-    private DocumentContentRepository documentContentRepository;
+    private final DocumentChunkRepository documentChunkRepository;
 
-    @Autowired
-    private DocumentEmbeddingRepository documentEmbeddingRepository;
+    public DocumentEmbeddingService(DocumentChunkRepository documentChunkRepository) {
+        this.documentChunkRepository = documentChunkRepository;
+    }
 
-    @Autowired
-    private EmbeddingProvider embeddingProvider;
+    public void indexDocument(Document document, String fullText) {
 
-    @Transactional
-    public void indexDocument(Long documentId, String fullText) {
-        if (documentId == null) {
+        if (document == null || document.getId() == null) {
             throw new IllegalArgumentException("documentId is required");
         }
         if (fullText == null || fullText.trim().isEmpty()) {
             throw new IllegalArgumentException("fullText is required");
         }
 
-        documentContentRepository.deleteByDocumentId(documentId);
-        documentEmbeddingRepository.deleteByDocumentId(documentId);
-
         List<String> chunks = chunkText(fullText, DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP);
-        int index = 0;
-        for (String chunk : chunks) {
-            DocumentContent content = DocumentContent.builder()
-                    .documentId(documentId)
-                    .content(chunk)
-                    .chunkIndex(index)
-                    .build();
-            documentContentRepository.save(content);
 
-            float[] embedding = embeddingProvider.embed(chunk);
+        saveChunks(document, chunks);
+    }
 
-            DocumentEmbedding documentEmbedding = DocumentEmbedding.builder()
-                    .documentId(documentId)
-                    .embedding(embedding)
-                    .contentChunk(chunk)
-                    .build();
-            documentEmbeddingRepository.save(documentEmbedding);
-            index++;
+    @Transactional
+    protected void saveChunks(Document document,
+                              List<String> chunks) {
+
+        documentChunkRepository.deleteByDocument_Id(document.getId());
+
+        List<DocumentChunk> entities = new ArrayList<>();
+
+        for (int i = 0; i < chunks.size(); i++) {
+            entities.add(DocumentChunk.builder()
+                    .document(document)
+                    .content(chunks.get(i))
+                    .chunkIndex(i)
+                    .build());
         }
+
+        documentChunkRepository.saveAll(entities);
     }
 
     public List<DocumentEmbeddingSearchRow> search(String query, int limit) {
@@ -66,8 +60,7 @@ public class DocumentEmbeddingService {
             throw new IllegalArgumentException("query is required");
         }
         int safeLimit = Math.max(1, limit);
-        float[] queryEmbedding = embeddingProvider.embed(query);
-        return documentEmbeddingRepository.searchSimilar(queryEmbedding, safeLimit);
+        return documentChunkRepository.searchFullText(query, safeLimit);
     }
 
     private List<String> chunkText(String text, int chunkSize, int overlap) {

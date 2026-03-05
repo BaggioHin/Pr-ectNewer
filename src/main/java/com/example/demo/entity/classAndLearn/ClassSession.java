@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 
 @Entity
@@ -21,6 +22,9 @@ public class ClassSession {
 
     @NotNull
     private LocalDate date;
+
+    private LocalTime startTime;
+    private LocalTime endTime;
     private String topic;
 
     @Enumerated(EnumType.STRING)

@@ -1,5 +1,5 @@
 package com.example.demo.constant;
 
 public enum CreateType {
-    STUDENT,TEACHER,ADMIN,SALE
+    STUDENT,TEACHER,ADMIN,SALER
 }

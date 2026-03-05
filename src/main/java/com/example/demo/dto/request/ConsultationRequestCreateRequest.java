@@ -12,7 +12,6 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @Builder
 public class ConsultationRequestCreateRequest {
-    private Long userId;
     private String phone;
     private String email;
     private String message;

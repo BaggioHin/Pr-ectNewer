@@ -13,12 +13,9 @@ import java.time.LocalDate;
 @AllArgsConstructor
 @Builder
 public class CourseClassRequest {
-//    private Long id;
-    private String code;
     private String name;
     private String description;
     private LocalDate startDate;
-    private LocalDate endDate;
     private StatusCourse statusCourse;
     private Long courseId;
 }

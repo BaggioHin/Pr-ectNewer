@@ -21,7 +21,9 @@ public class UserProfile {
     private Long id;
 
     @Size(max = 2048)
-    private String avatar;
+    private String avatarUrl;
+
+    private String avatarPublicId;
 
     @Size(max = 1000)
     private String bio;

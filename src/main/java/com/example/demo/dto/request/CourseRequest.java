@@ -6,18 +6,15 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDate;
 
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 public class CourseRequest {
-    private String code;
     private String name;
     private String description;
-    private LocalDate startDate;
-    private LocalDate endDate;
+    private Integer totalSessions;
     private StatusCourse statusCourse;
-    private Long credit;
+    private Long price;
 }

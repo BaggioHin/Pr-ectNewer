@@ -13,6 +13,7 @@ import com.example.demo.repository.AttendanceRepository;
 import com.example.demo.repository.ClassSessionRepository;
 import com.example.demo.repository.StudentRepository;
 import com.example.demo.service.k1.AttendanceService;
+import com.example.demo.service.k1.AdminStatsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -32,6 +33,8 @@ public class AttendanceServiceImpl implements AttendanceService {
     StudentRepository studentRepository;
     @Autowired
     ClassSessionRepository classSessionRepository;
+    @Autowired
+    AdminStatsService adminStatsService;
 
     @Override
     public AttendanceResponse getAttendanceById(Long classSessionId, Long studentId) {
@@ -59,7 +62,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('ADMIN','SALE')")
+    @PreAuthorize("hasAnyRole('ADMIN','SALER')")
     public AttendanceResponse addAttendance(AttendanceRequest request) {
         if (request == null || request.getClassSessionId() == null || request.getStudentId() == null) {
             throw new AppException(ErrorCode.IMFORMATION_NULL);
@@ -80,6 +83,7 @@ public class AttendanceServiceImpl implements AttendanceService {
         attendance.setStatusAttendance(request.getStatusAttendance());
 
         Attendance saved = attendanceRepository.save(attendance);
+        adminStatsService.refreshMonthlyStats(java.time.LocalDateTime.now());
         return toResponse(saved);
     }
 
@@ -99,6 +103,7 @@ public class AttendanceServiceImpl implements AttendanceService {
         Attendance attendance = attendanceRepository.findById(new AttendanceId(classSessionId, studentId))
                 .orElseThrow(() -> new AppException(ErrorCode.IMFORMATION_NULL));
         attendanceRepository.delete(attendance);
+        adminStatsService.refreshMonthlyStats(java.time.LocalDateTime.now());
         return "Delete successful!";
     }
 

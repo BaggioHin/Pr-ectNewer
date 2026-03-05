@@ -42,7 +42,7 @@ public class StudentServiceImpl implements StudentService {
                     .dob(profile != null ? profile.getDob() : null)
                     .email(user.getEmail())
                     .phone(user.getPhone())
-                    .thumbnailUrl(profile != null ? profile.getAvatar() : null)
+                    .thumbnailUrl(profile != null ? profile.getAvatarUrl() : null)
                     .build();
             unique.putIfAbsent(user.getId(), response);
         }

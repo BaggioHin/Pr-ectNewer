@@ -5,8 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.DayOfWeek;
-import java.time.LocalTime;
+import java.time.LocalDate;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -14,8 +14,7 @@ import java.time.LocalTime;
 @Builder
 public class ScheduleRequest {
     private Long courseClassId;
-    private DayOfWeek dayOfWeek;
-    private LocalTime startTime;
-    private LocalTime endTime;
+    private LocalDate startDate;
+    private List<ScheduleSlotRequest> slots;
     private String room;
 }

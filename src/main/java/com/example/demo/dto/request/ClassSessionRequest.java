@@ -7,6 +7,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 
 @Data
 @NoArgsConstructor
@@ -15,6 +16,8 @@ import java.time.LocalDate;
 public class ClassSessionRequest {
     private Long classScheduleId;
     private LocalDate date;
+    private LocalTime startTime;
+    private LocalTime endTime;
     private String topic;
     private StatusClassSession statusClassSession;
 }

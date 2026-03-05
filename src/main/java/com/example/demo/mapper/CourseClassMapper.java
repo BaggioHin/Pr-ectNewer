@@ -19,9 +19,8 @@ public interface CourseClassMapper {
 
     List<CourseClassResponse> entityToListResponse(List<CourseClass> courseClasses);
 
-    @Mapping(source = "code", target = "classCode")
     @Mapping(source = "startDate", target = "startDay")
-    @Mapping(source = "endDate", target = "endDay")
+//    @Mapping(source = "endDate", target = "endDay")
     void requestToEntity(CourseClassRequest courseClassRequest, @MappingTarget CourseClass courseClass);
 
     CourseClassSummary entityToSummary(CourseClass courseClass);
