@@ -3,6 +3,7 @@ package com.example.demo.controller;
 import com.example.demo.dto.request.ScheduleRequest;
 import com.example.demo.dto.response.ApiResponse;
 import com.example.demo.dto.response.PageResponse;
+import com.example.demo.dto.response.ScheduleEventResponse;
 import com.example.demo.dto.response.ScheduleResponse;
 import com.example.demo.service.k1.ScheduleService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +44,13 @@ public class ScheduleController {
     ApiResponse<List<ScheduleResponse>> getMySchedules() {
         return ApiResponse.<List<ScheduleResponse>>builder()
                 .result(scheduleService.getMySchedules())
+                .build();
+    }
+
+    @GetMapping("/me/events")
+    ApiResponse<List<ScheduleEventResponse>> getMyScheduleEvents() {
+        return ApiResponse.<List<ScheduleEventResponse>>builder()
+                .result(scheduleService.getMyScheduleEvents())
                 .build();
     }
 

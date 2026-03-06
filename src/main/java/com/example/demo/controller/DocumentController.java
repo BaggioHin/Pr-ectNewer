@@ -1,7 +1,9 @@
 package com.example.demo.controller;
 
 import com.example.demo.dto.response.ApiResponse;
+import com.example.demo.dto.response.DocumentResponse;
 import com.example.demo.dto.response.DocumentSearchResponse;
+import com.example.demo.dto.response.PageResponse;
 import com.example.demo.service.k1.DocumentService;
 import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.http.MediaType;
@@ -49,6 +51,18 @@ public class DocumentController {
     ) {
         return ApiResponse.<List<DocumentSearchResponse>>builder()
                 .result(documentService.searchDocuments(query, limit))
+                .build();
+    }
+
+    @Operation(summary = "Get documents of my enrolled classes")
+    @GetMapping("/me")
+    @PreAuthorize("hasRole('STUDENT')")
+    ApiResponse<PageResponse<DocumentResponse>> getMyDocuments(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        return ApiResponse.<PageResponse<DocumentResponse>>builder()
+                .result(documentService.getMyDocuments(page, size))
                 .build();
     }
 }

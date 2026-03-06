@@ -1,6 +1,8 @@
 package com.example.demo.service.k1;
 
 import com.example.demo.dto.response.DocumentSearchResponse;
+import com.example.demo.dto.response.DocumentResponse;
+import com.example.demo.dto.response.PageResponse;
 
 import org.springframework.web.multipart.MultipartFile;
 
@@ -15,4 +17,6 @@ public interface DocumentService {
     );
 
     List<DocumentSearchResponse> searchDocuments(String query, int limit);
+
+    PageResponse<DocumentResponse> getMyDocuments(int page, int size);
 }

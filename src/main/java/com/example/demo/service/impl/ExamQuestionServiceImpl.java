@@ -9,6 +9,7 @@ import com.example.demo.exception.AppException;
 import com.example.demo.exception.ErrorCode;
 import com.example.demo.repository.ExamQuestionRepository;
 import com.example.demo.repository.ExamRepository;
+import com.example.demo.repository.ExamResultRepository;
 import com.example.demo.service.k1.ExamQuestionService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -16,6 +17,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -28,6 +32,9 @@ public class ExamQuestionServiceImpl implements ExamQuestionService {
 
     @Autowired
     private ExamRepository examRepository;
+
+    @Autowired
+    private ExamResultRepository examResultRepository;
 
     @Override
     public ExamQuestionResponse getExamQuestionById(Long id) {
@@ -61,6 +68,28 @@ public class ExamQuestionServiceImpl implements ExamQuestionService {
                 pageResult.getTotalElements(),
                 pageResult.getTotalPages()
         );
+    }
+
+    @Override
+    @PreAuthorize("hasRole('STUDENT')")
+    public List<ExamQuestionResponse> getReviewQuestions(Long examId) {
+        if (examId == null) {
+            throw new AppException(ErrorCode.IMFORMATION_NULL);
+        }
+        if (!examRepository.existsById(examId)) {
+            throw new AppException(ErrorCode.IMFORMATION_NULL);
+        }
+
+        Long studentId = resolveUserId();
+        boolean done = examResultRepository.existsByExam_IdAndStudent_UserId(examId, studentId);
+        if (!done) {
+            throw new AppException(ErrorCode.INVALID_STATUS);
+        }
+
+        return examQuestionRepository.findByExam_Id(examId)
+                .stream()
+                .map(this::toResponse)
+                .toList();
     }
 
     @Override
@@ -156,5 +185,13 @@ public class ExamQuestionServiceImpl implements ExamQuestionService {
                 .correctOption(question.getCorrectOption())
                 .explanation(question.getExplanation())
                 .build();
+    }
+
+    private Long resolveUserId() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof Jwt jwt)) {
+            throw new AppException(ErrorCode.UNAUTHENTICATED);
+        }
+        return jwt.getClaim("userId");
     }
 }

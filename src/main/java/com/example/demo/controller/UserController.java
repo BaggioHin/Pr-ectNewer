@@ -1,7 +1,9 @@
 package com.example.demo.controller;
 
 import com.example.demo.constant.CreateType;
+import com.example.demo.dto.request.ChangePasswordRequest;
 import com.example.demo.dto.request.UserRequest;
+import com.example.demo.dto.request.UserUpdateRequest;
 import com.example.demo.dto.response.ApiResponse;
 import com.example.demo.dto.response.PageResponse;
 import com.example.demo.dto.response.UserMeResponse;
@@ -71,9 +73,26 @@ public class UserController {
 
     @Operation(summary = "Update user")
     @PutMapping
-    ApiResponse<String> editUser(@RequestBody UserRequest userRequest){
+    ApiResponse<String> editUser(@RequestBody UserUpdateRequest userRequest){
         return ApiResponse.<String>builder()
                 .result(userService.editUser(userRequest))
+                .build();
+    }
+
+    @Operation(summary = "Change password")
+    @PutMapping("/password")
+    ApiResponse<String> changePassword(@RequestBody ChangePasswordRequest request){
+        return ApiResponse.<String>builder()
+                .result(userService.changePassword(request))
+                .build();
+    }
+
+    @Operation(summary = "Request reset password link (current user)")
+    @PostMapping("/forgot-password")
+    @PreAuthorize("isAuthenticated()")
+    ApiResponse<String> requestResetPassword(){
+        return ApiResponse.<String>builder()
+                .result(userService.requestPasswordResetForCurrentUser())
                 .build();
     }
 
@@ -88,7 +107,6 @@ public class UserController {
 
     @Operation(summary = "Upload avatar")
     @PutMapping(value = "/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("isAuthenticated()")
     ApiResponse<String> uploadAvatar(@RequestPart("avatar") MultipartFile avatar) {
         return ApiResponse.<String>builder()
                 .result(userService.uploadAvatar(avatar))

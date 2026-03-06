@@ -31,6 +31,13 @@ public class ClassSession {
     @NotNull
     private StatusClassSession statusClassSession;
 
+    @Column(name = "is_makeup", nullable = false)
+    private boolean makeup;
+
+    @ManyToOne
+    @JoinColumn(name = "makeup_for_session_id")
+    private ClassSession makeupForSession;
+
     @ManyToOne
     @JoinColumn(name = "classShedule_id")
     @NotNull

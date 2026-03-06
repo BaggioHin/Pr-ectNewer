@@ -20,4 +20,6 @@ public class ClassSessionRequest {
     private LocalTime endTime;
     private String topic;
     private StatusClassSession statusClassSession;
+    private Boolean makeup;
+    private Long makeupForSessionId;
 }

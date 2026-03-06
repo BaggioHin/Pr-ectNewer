@@ -32,6 +32,14 @@ public class ExamQuestionController {
                 .build();
     }
 
+    @GetMapping("/review")
+    ApiResponse<java.util.List<ExamQuestionResponse>> getReviewQuestions(
+            @RequestParam Long examId) {
+        return ApiResponse.<java.util.List<ExamQuestionResponse>>builder()
+                .result(examQuestionService.getReviewQuestions(examId))
+                .build();
+    }
+
     @PostMapping
     ApiResponse<ExamQuestionResponse> createExamQuestion(@RequestBody ExamQuestionRequest request) {
         return ApiResponse.<ExamQuestionResponse>builder()

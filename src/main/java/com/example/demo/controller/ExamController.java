@@ -5,6 +5,7 @@ import com.example.demo.dto.request.ExamSubmitRequest;
 import com.example.demo.dto.response.ApiResponse;
 import com.example.demo.dto.response.ExamResponse;
 import com.example.demo.dto.response.ExamSubmitResponse;
+import com.example.demo.dto.response.ExamStudentResponse;
 import com.example.demo.dto.response.PageResponse;
 import com.example.demo.service.k1.ExamService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -41,6 +42,17 @@ public class ExamController {
     ApiResponse<List<ExamResponse>> getExamByCourseClassName(@RequestParam String name) {
         return ApiResponse.<List<ExamResponse>>builder()
                 .result(examService.getExamByCourseClassName(name))
+                .build();
+    }
+
+    @Operation(summary = "Get my exams (all/done/not_done)")
+    @GetMapping("/me")
+    ApiResponse<PageResponse<ExamStudentResponse>> getMyExams(
+            @RequestParam(defaultValue = "all") String status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return ApiResponse.<PageResponse<ExamStudentResponse>>builder()
+                .result(examService.getMyExams(status, page, size))
                 .build();
     }
 

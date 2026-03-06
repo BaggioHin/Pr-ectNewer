@@ -21,4 +21,6 @@ public class ClassSessionResponse {
     private LocalTime endTime;
     private String topic;
     private StatusClassSession statusClassSession;
+    private boolean makeup;
+    private Long makeupForSessionId;
 }

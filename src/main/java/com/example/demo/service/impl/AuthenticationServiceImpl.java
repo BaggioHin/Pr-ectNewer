@@ -1,17 +1,22 @@
 package com.example.demo.service.impl;
 
 import com.example.demo.dto.request.AuthenticationRequest;
+import com.example.demo.dto.request.ForgotPasswordRequest;
 import com.example.demo.dto.request.IntrospectRequest;
 import com.example.demo.dto.request.LogoutRequest;
+import com.example.demo.dto.request.ResetPasswordRequest;
 import com.example.demo.dto.response.AuthenticationResponse;
 import com.example.demo.dto.response.IntrospectResponse;
+import com.example.demo.entity.authAndUser.PasswordResetToken;
 import com.example.demo.entity.authAndUser.InvalidationTokenEntity;
 import com.example.demo.entity.authAndUser.Role;
 import com.example.demo.entity.authAndUser.User;
 import com.example.demo.exception.AppException;
 import com.example.demo.exception.ErrorCode;
+import com.example.demo.repository.PasswordResetTokenRepository;
 import com.example.demo.repository.InValidationTokenRepository;
 import com.example.demo.repository.UserRepository;
+import com.example.demo.service.EmailService;
 import com.example.demo.service.k1.AuthenticationService;
 import com.nimbusds.jose.*;
 import com.nimbusds.jose.crypto.MACSigner;
@@ -25,6 +30,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.text.ParseException;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -57,6 +64,18 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
     @Autowired
     private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private PasswordResetTokenRepository passwordResetTokenRepository;
+
+    @Autowired
+    private EmailService emailService;
+
+    @Value("${app.reset-password-url:http://localhost:5173/reset-password}")
+    private String resetPasswordUrl;
+
+    @Value("${app.reset-password-exp-minutes:30}")
+    private long resetPasswordExpMinutes;
 
 
     @Override
@@ -202,6 +221,67 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                 .build();
     }
 
+    @Override
+    public String forgotPassword(ForgotPasswordRequest request) {
+        if (request == null || request.getEmail() == null || request.getEmail().isBlank()) {
+            throw new AppException(ErrorCode.IMFORMATION_NULL);
+        }
+        var userOpt = userRepository.findByEmail(request.getEmail().trim());
+        if (userOpt.isEmpty()) {
+            return "If the email exists, a reset link has been sent.";
+        }
+        User user = userOpt.get();
+        if (user.getEmail() == null || user.getEmail().isBlank()) {
+            return "If the email exists, a reset link has been sent.";
+        }
+
+        passwordResetTokenRepository.deleteByUser_Id(user.getId());
+
+        String rawToken = UUID.randomUUID().toString().replace("-", "");
+        String tokenHash = hashToken(rawToken);
+        LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(resetPasswordExpMinutes);
+
+        PasswordResetToken token = PasswordResetToken.builder()
+                .user(user)
+                .tokenHash(tokenHash)
+                .expiresAt(expiresAt)
+                .used(false)
+                .build();
+        passwordResetTokenRepository.save(token);
+
+        String link = resetPasswordUrl + "?token=" + rawToken;
+        emailService.sendResetPasswordEmail(user.getEmail(), link);
+        return "If the email exists, a reset link has been sent.";
+    }
+
+    @Override
+    public String resetPassword(ResetPasswordRequest request) {
+        if (request == null || request.getToken() == null || request.getNewPassword() == null) {
+            throw new AppException(ErrorCode.IMFORMATION_NULL);
+        }
+        if (request.getToken().isBlank() || request.getNewPassword().isBlank()) {
+            throw new AppException(ErrorCode.INVALID_PASSWORD);
+        }
+        String tokenHash = hashToken(request.getToken().trim());
+        PasswordResetToken token = passwordResetTokenRepository.findByTokenHash(tokenHash)
+                .orElseThrow(() -> new AppException(ErrorCode.RESET_TOKEN_INVALID));
+        if (token.isUsed()) {
+            throw new AppException(ErrorCode.RESET_TOKEN_INVALID);
+        }
+        if (token.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new AppException(ErrorCode.RESET_TOKEN_EXPIRED);
+        }
+        User user = token.getUser();
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        user.setUpdatedAt(LocalDateTime.now());
+        userRepository.save(user);
+
+        token.setUsed(true);
+        token.setUsedAt(LocalDateTime.now());
+        passwordResetTokenRepository.save(token);
+        return "Reset password successful!";
+    }
+
 //    @Override
 //    public ChangePasswordResponse changePassword(ChangePasswordRequest changePasswordRequest) throws ParseException, JOSEException {
 //        SignedJWT signedJWT = verifyToken(changePasswordRequest.getToken(),true);
@@ -250,5 +330,19 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         return user.getRoles().stream()
                 .map(Role::getName)
                 .collect(Collectors.joining(" "));
+    }
+
+    private String hashToken(String raw) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(raw.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

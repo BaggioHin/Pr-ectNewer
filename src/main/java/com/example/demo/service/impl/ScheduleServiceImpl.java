@@ -3,13 +3,18 @@ package com.example.demo.service.impl;
 import com.example.demo.dto.request.ScheduleRequest;
 import com.example.demo.dto.request.ScheduleSlotRequest;
 import com.example.demo.dto.response.PageResponse;
+import com.example.demo.dto.response.ScheduleEventResponse;
 import com.example.demo.dto.response.ScheduleResponse;
 import com.example.demo.dto.response.ScheduleSlotResponse;
+import com.example.demo.constant.NotificationRefType;
+import com.example.demo.constant.NotificationType;
+import com.example.demo.constant.EnrollmentStatus;
 import com.example.demo.entity.classAndLearn.ClassSchedule;
 import com.example.demo.entity.classAndLearn.ClassSession;
 import com.example.demo.entity.classAndLearn.ClassScheduleSlot;
 import com.example.demo.entity.classAndLearn.CourseClass;
 import com.example.demo.entity.classAndLearn.TeachingAssignment;
+import com.example.demo.entity.gradeAndEvaluate.Exam;
 import com.example.demo.entity.loginAndProcess.Enrollment;
 import com.example.demo.exception.AppException;
 import com.example.demo.exception.ErrorCode;
@@ -17,8 +22,10 @@ import com.example.demo.repository.ClassScheduleRepository;
 import com.example.demo.repository.ClassSessionRepository;
 import com.example.demo.repository.CourseClassRepository;
 import com.example.demo.repository.EnrollmentRepository;
+import com.example.demo.repository.ExamRepository;
 import com.example.demo.repository.TeachingAssignmentRepository;
 import com.example.demo.service.k1.ScheduleService;
+import com.example.demo.service.notification.NotificationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -27,6 +34,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 
 import java.time.DayOfWeek;
@@ -37,6 +45,7 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.Comparator;
 import java.util.Set;
 
 @Service
@@ -52,6 +61,10 @@ public class ScheduleServiceImpl implements ScheduleService {
     TeachingAssignmentRepository teachingAssignmentRepository;
     @Autowired
     EnrollmentRepository enrollmentRepository;
+    @Autowired
+    ExamRepository examRepository;
+    @Autowired
+    NotificationService notificationService;
 
     @Override
     public ScheduleResponse addScheduleInCourseClass(ScheduleRequest request) {
@@ -89,6 +102,7 @@ public class ScheduleServiceImpl implements ScheduleService {
         courseClassRepository.save(courseClass);
 
         ensureSessionsExist(saved, plan.sessions);
+        notifyStudentsNewSchedule(saved);
         return toResponse(saved);
     }
 
@@ -144,6 +158,74 @@ public class ScheduleServiceImpl implements ScheduleService {
     }
 
     @Override
+    @PreAuthorize("hasAnyRole('ADMIN','TEACHER','STUDENT')")
+    public List<ScheduleEventResponse> getMyScheduleEvents() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof Jwt jwt)) {
+            throw new AppException(ErrorCode.UNAUTHENTICATED);
+        }
+        Long userId = jwt.getClaim("userId");
+
+        Set<Long> courseClassIds = resolveCourseClassIdsForUser(auth, userId);
+        if (courseClassIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<CourseClass> classes = courseClassRepository.findAllById(courseClassIds);
+        Map<Long, CourseClass> classMap = new HashMap<>();
+        for (CourseClass cc : classes) {
+            classMap.put(cc.getId(), cc);
+        }
+
+        List<ScheduleEventResponse> events = new ArrayList<>();
+        List<ClassSession> sessions = classSessionRepository.findByCourseClassIds(new ArrayList<>(courseClassIds));
+        for (ClassSession session : sessions) {
+            CourseClass cc = session.getClassSchedule() != null ? session.getClassSchedule().getCourseClass() : null;
+            events.add(ScheduleEventResponse.builder()
+                    .type("CLASS_SESSION")
+                    .courseClassId(cc != null ? cc.getId() : null)
+                    .courseClassName(cc != null ? cc.getName() : null)
+                    .date(session.getDate())
+                    .startTime(session.getStartTime())
+                    .endTime(session.getEndTime())
+                    .title(session.getTopic() != null ? session.getTopic() : "Class session")
+                    .refId(session.getId())
+                    .build());
+        }
+
+        List<Exam> exams = examRepository.findByCourseClass_IdIn(new ArrayList<>(courseClassIds));
+        for (Exam exam : exams) {
+            CourseClass cc = exam.getCourseClass();
+            String subjectName = exam.getSubject() != null ? exam.getSubject().getName() : null;
+            String title = "Exam deadline";
+            if (exam.getTypeGrade() != null && subjectName != null) {
+                title = exam.getTypeGrade() + " - " + subjectName;
+            } else if (exam.getTypeGrade() != null) {
+                title = exam.getTypeGrade().toString();
+            } else if (subjectName != null) {
+                title = subjectName;
+            }
+            events.add(ScheduleEventResponse.builder()
+                    .type("EXAM_DEADLINE")
+                    .courseClassId(cc != null ? cc.getId() : null)
+                    .courseClassName(cc != null ? cc.getName() : null)
+                    .date(exam.getExamDate())
+                    .title(title)
+                    .refId(exam.getId())
+                    .subjectName(subjectName)
+                    .typeGrade(exam.getTypeGrade())
+                    .build());
+        }
+
+        events.sort(Comparator
+                .comparing(ScheduleEventResponse::getDate, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(ScheduleEventResponse::getStartTime, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(ScheduleEventResponse::getType, Comparator.nullsLast(Comparator.naturalOrder()))
+        );
+        return events;
+    }
+
+    @Override
     public PageResponse<ScheduleResponse> getListSchedule(int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("id").descending());
         Page<ClassSchedule> pageResult = classScheduleRepository.findAll(pageable);
@@ -180,6 +262,33 @@ public class ScheduleServiceImpl implements ScheduleService {
                 .build();
     }
 
+    private void notifyStudentsNewSchedule(ClassSchedule schedule) {
+        if (schedule == null || schedule.getCourseClass() == null || schedule.getCourseClass().getId() == null) {
+            return;
+        }
+        Long classId = schedule.getCourseClass().getId();
+        List<Long> userIds = enrollmentRepository.findStudentUserIdsByCourseClassIdAndStatuses(
+                classId,
+                List.of(EnrollmentStatus.STUDYING)
+        );
+        if (userIds == null || userIds.isEmpty()) {
+            return;
+        }
+        String className = schedule.getCourseClass().getName();
+        String title = "Lich hoc moi";
+        String content = className == null || className.isBlank()
+                ? "Lop cua ban co lich hoc moi."
+                : "Lop " + className + " co lich hoc moi.";
+        notificationService.notifyUsers(
+                title,
+                content,
+                NotificationType.CLASS_SCHEDULE_CREATED,
+                NotificationRefType.CLASS_SCHEDULE,
+                schedule.getId(),
+                userIds
+        );
+    }
+
     private SchedulePlan buildSchedulePlan(LocalDate startDate, Integer totalSessions, Map<DayOfWeek, ClassScheduleSlot> slotByDay, ClassSchedule schedule) {
         if (totalSessions == null || totalSessions <= 0) {
             throw new AppException(ErrorCode.IMFORMATION_NULL);
@@ -201,6 +310,7 @@ public class ScheduleServiceImpl implements ScheduleService {
                 session.setStartTime(slot.getStartTime());
                 session.setEndTime(slot.getEndTime());
                 session.setStatusClassSession(com.example.demo.constant.StatusClassSession.DOING);
+                session.setMakeup(false);
                 session.setClassSchedule(schedule);
                 sessions.add(session);
                 if (firstSessionStart == null) {
@@ -246,6 +356,27 @@ public class ScheduleServiceImpl implements ScheduleService {
             }
         }
         return slotByDay;
+    }
+
+    private Set<Long> resolveCourseClassIdsForUser(Authentication auth, Long userId) {
+        Set<Long> courseClassIds = new LinkedHashSet<>();
+        if (auth.getAuthorities().stream().anyMatch(a -> "ROLE_TEACHER".equals(a.getAuthority()))) {
+            List<TeachingAssignment> assignments = teachingAssignmentRepository.findByTeacher_UserId(userId);
+            for (TeachingAssignment assignment : assignments) {
+                if (assignment.getCourseClass() != null && assignment.getCourseClass().getId() != null) {
+                    courseClassIds.add(assignment.getCourseClass().getId());
+                }
+            }
+        }
+        if (auth.getAuthorities().stream().anyMatch(a -> "ROLE_STUDENT".equals(a.getAuthority()))) {
+            List<Enrollment> enrollments = enrollmentRepository.findByStudent_UserId(userId);
+            for (Enrollment enrollment : enrollments) {
+                if (enrollment.getCourseClass() != null && enrollment.getCourseClass().getId() != null) {
+                    courseClassIds.add(enrollment.getCourseClass().getId());
+                }
+            }
+        }
+        return courseClassIds;
     }
 
     private List<ScheduleSlotResponse> toSlotResponses(List<ClassScheduleSlot> slots) {

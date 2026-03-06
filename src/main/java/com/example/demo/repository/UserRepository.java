@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.List;
 
 @Repository
 public interface UserRepository extends JpaRepository<User,Long> {
@@ -23,6 +24,17 @@ public interface UserRepository extends JpaRepository<User,Long> {
 
     boolean existsByUsernameAndIdNot(String username, Long userId);
 
+    @Query(
+            value = """
+                    select u.*
+                    from users u
+                    join user_profile p on p.user_id = u.id
+                    where p.name = :name
+                    """,
+            nativeQuery = true
+    )
+    List<User> findByProfileName(@Param("name") String name);
+
     @Query("select count(u) from User u where not exists (select r from u.roles r where r.name = :role)")
     long countUsersExcludingRole(@Param("role") String role);
 
@@ -36,4 +48,7 @@ public interface UserRepository extends JpaRepository<User,Long> {
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end
     );
+
+    @Query("select u from User u join u.roles r where r.name = :role")
+    List<User> findByRoleName(@Param("role") String role);
 }

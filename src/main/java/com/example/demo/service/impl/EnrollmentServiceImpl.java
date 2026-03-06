@@ -130,43 +130,18 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         Long userId = jwt.getClaim("userId");
         var userCreate = userRepository.findById(userId)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
+        return createEnrollmentInternal(userCreate, courseClassId, studentId);
+    }
 
-        User user = userRepository.findById(studentId)
-                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
-        Student student = studentRepository.findById(user.getId())
-                .orElseThrow(() -> new AppException(ErrorCode.IMFORMATION_NULL));
-        CourseClass courseClass = courseClassRepository.findById(courseClassId)
-                .orElseThrow(() -> new AppException(ErrorCode.COURSECLASS_NOT_FOUND));
-        if (courseClass.getStatusCourse() != StatusCourse.OPEN) {
-            throw new AppException(ErrorCode.COURSECLASS_CLOSED);
-        }
-        if (enrollmentRepository.existsByStudent_UserIdAndCourseClass_Id(student.getUserId(), courseClass.getId())) {
-            throw new AppException(ErrorCode.ENROLLMENT_EXISTED);
-        }
-        if (enrollmentRepository.countByCourseClass_Id(courseClass.getId()) >= MAX_CLASS_SIZE) {
-            throw new AppException(ErrorCode.COURSECLASS_FULL);
-        }
-
-        Saler saler = resolveSaler(userCreate);
-        if (saler == null) {
+    @Override
+    @Transactional
+    public EnrollmentReponse createEnrollmentForPayment(Long courseClassId, Long studentId, Long salerUserId) {
+        if (salerUserId == null) {
             throw new AppException(ErrorCode.IMFORMATION_NULL);
         }
-        Enrollment enrollment = new Enrollment();
-        enrollment.setStudent(student);
-        enrollment.setCourseClass(courseClass);
-        enrollment.setStatus(EnrollmentStatus.STUDYING);
-        enrollment.setEnrolledAt(LocalDateTime.now());
-        enrollment.setUpdatedAt(LocalDate.now());
-        enrollment.setEndAt(courseClass.getEndDay());
-        enrollment.setCreateById(saler != null ? saler.getCode() : null);
-        Enrollment saved = enrollmentRepository.save(enrollment);
-        createStudentProgressIfMissing(student, courseClass);
-        updateMonthlyRevenueStats(saved);
-        updateCourseStudentStats(saved);
-        updateSalerRevenueStats(userCreate, saved);
-        recordSalerTransaction(userCreate, saved);
-        adminStatsService.refreshMonthlyStats(saved.getEnrolledAt());
-        return toResponse(saved);
+        var userCreate = userRepository.findById(salerUserId)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
+        return createEnrollmentInternal(userCreate, courseClassId, studentId);
     }
 
     @Override
@@ -204,6 +179,48 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .status(enrollment.getStatus())
                 .courseClass(courseClassMapper.entityToSummary(enrollment.getCourseClass()))
                 .build();
+    }
+
+    private EnrollmentReponse createEnrollmentInternal(User userCreate, Long courseClassId, Long studentId) {
+        if (courseClassId == null || studentId == null) {
+            throw new AppException(ErrorCode.IMFORMATION_NULL);
+        }
+        User user = userRepository.findById(studentId)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
+        Student student = studentRepository.findById(user.getId())
+                .orElseThrow(() -> new AppException(ErrorCode.IMFORMATION_NULL));
+        CourseClass courseClass = courseClassRepository.findById(courseClassId)
+                .orElseThrow(() -> new AppException(ErrorCode.COURSECLASS_NOT_FOUND));
+        if (courseClass.getStatusCourse() != StatusCourse.OPEN) {
+            throw new AppException(ErrorCode.COURSECLASS_CLOSED);
+        }
+        if (enrollmentRepository.existsByStudent_UserIdAndCourseClass_Id(student.getUserId(), courseClass.getId())) {
+            throw new AppException(ErrorCode.ENROLLMENT_EXISTED);
+        }
+        if (enrollmentRepository.countByCourseClass_Id(courseClass.getId()) >= MAX_CLASS_SIZE) {
+            throw new AppException(ErrorCode.COURSECLASS_FULL);
+        }
+
+        Saler saler = resolveSaler(userCreate);
+        if (saler == null) {
+            throw new AppException(ErrorCode.IMFORMATION_NULL);
+        }
+        Enrollment enrollment = new Enrollment();
+        enrollment.setStudent(student);
+        enrollment.setCourseClass(courseClass);
+        enrollment.setStatus(EnrollmentStatus.STUDYING);
+        enrollment.setEnrolledAt(LocalDateTime.now());
+        enrollment.setUpdatedAt(LocalDate.now());
+        enrollment.setEndAt(courseClass.getEndDay());
+        enrollment.setCreateById(saler.getCode());
+        Enrollment saved = enrollmentRepository.save(enrollment);
+        createStudentProgressIfMissing(student, courseClass);
+        updateMonthlyRevenueStats(saved);
+        updateCourseStudentStats(saved);
+        updateSalerRevenueStats(userCreate, saved);
+        recordSalerTransaction(userCreate, saved);
+        adminStatsService.refreshMonthlyStats(saved.getEnrolledAt());
+        return toResponse(saved);
     }
 
     private void createStudentProgressIfMissing(Student student, CourseClass courseClass) {

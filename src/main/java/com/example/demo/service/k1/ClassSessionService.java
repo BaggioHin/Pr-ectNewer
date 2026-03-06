@@ -14,4 +14,12 @@ public interface ClassSessionService {
     ClassSessionResponse editClassSession(Long id, ClassSessionRequest request);
 
     String deleteClassSession(Long id);
+
+    ClassSessionResponse addMakeupSession(ClassSessionRequest request);
+
+    ClassSessionResponse editMakeupSession(Long id, ClassSessionRequest request);
+
+    ClassSessionResponse getMakeupSessionById(Long id);
+
+    java.util.List<ClassSessionResponse> getMakeupSessionsByCourseClass(Long courseClassId);
 }

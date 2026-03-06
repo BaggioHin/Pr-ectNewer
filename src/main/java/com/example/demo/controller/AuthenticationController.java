@@ -1,9 +1,11 @@
 package com.example.demo.controller;
 
 import com.example.demo.dto.request.AuthenticationRequest;
+import com.example.demo.dto.request.ForgotPasswordRequest;
 import com.example.demo.dto.request.IntrospectRequest;
 import com.example.demo.dto.request.LogoutRequest;
 import com.example.demo.dto.request.RefreshTokenRequest;
+import com.example.demo.dto.request.ResetPasswordRequest;
 import com.example.demo.dto.response.ApiResponse;
 import com.example.demo.dto.response.AuthenticationResponse;
 import com.example.demo.dto.response.IntrospectResponse;
@@ -66,6 +68,20 @@ public class AuthenticationController {
         setRefreshCookie(response.getRefreshToken(), httpResponse);
         return ApiResponse.<AuthenticationResponse>builder()
                 .result(response)
+                .build();
+    }
+
+    @PostMapping("/forgot-password")
+    ApiResponse<String> forgotPassword(@RequestBody ForgotPasswordRequest request) {
+        return ApiResponse.<String>builder()
+                .result(authenticationService.forgotPassword(request))
+                .build();
+    }
+
+    @PostMapping("/reset-password")
+    ApiResponse<String> resetPassword(@RequestBody ResetPasswordRequest request) {
+        return ApiResponse.<String>builder()
+                .result(authenticationService.resetPassword(request))
                 .build();
     }
 

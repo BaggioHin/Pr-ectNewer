@@ -10,4 +10,6 @@ public interface EnrollmentService {
 
     EnrollmentReponse addEnrollment(Long courseClassId,Long studentId);
     EnrollmentReponse changeStatusEnrollment(Long id, String status);
+
+    EnrollmentReponse createEnrollmentForPayment(Long courseClassId, Long studentId, Long salerUserId);
 }

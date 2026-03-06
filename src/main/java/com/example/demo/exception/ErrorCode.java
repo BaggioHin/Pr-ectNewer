@@ -31,7 +31,12 @@ public enum ErrorCode {
     DOCUMENT_FILE_TYPE_NOT_SUPPORTED(1022, "Only PDF and DOCX files are supported", HttpStatus.BAD_REQUEST),
     DOCUMENT_TEXT_EXTRACTION_FAILED(1023, "Cannot extract text from file", HttpStatus.BAD_REQUEST),
     DOCUMENT_CONTENT_EMPTY(1024, "Document content is empty after extraction", HttpStatus.BAD_REQUEST),
-    DOCUMENT_NOT_FOUND(1025, "Document not found", HttpStatus.NOT_FOUND)
+    DOCUMENT_NOT_FOUND(1025, "Document not found", HttpStatus.NOT_FOUND),
+    PASSWORD_CHANGE_NOT_ALLOWED(1026, "Password update is not allowed here", HttpStatus.BAD_REQUEST),
+    OLD_PASSWORD_INCORRECT(1027, "Old password is incorrect", HttpStatus.BAD_REQUEST),
+    RESET_TOKEN_INVALID(1028, "Reset token is invalid", HttpStatus.BAD_REQUEST),
+    RESET_TOKEN_EXPIRED(1029, "Reset token has expired", HttpStatus.BAD_REQUEST),
+    INVALID_AMOUNT(1030, "Invalid amount", HttpStatus.BAD_REQUEST)
     ;
 
     ErrorCode(int code, String message, HttpStatusCode statusCode) {

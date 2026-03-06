@@ -1,10 +1,14 @@
 package com.example.demo.service.impl;
 
 import com.example.demo.constant.TypeGrade;
+import com.example.demo.constant.NotificationRefType;
+import com.example.demo.constant.NotificationType;
+import com.example.demo.constant.EnrollmentStatus;
 import com.example.demo.dto.request.ExamRequest;
 import com.example.demo.dto.request.ExamSubmitRequest;
 import com.example.demo.dto.response.ExamResponse;
 import com.example.demo.dto.response.ExamSubmitResponse;
+import com.example.demo.dto.response.ExamStudentResponse;
 import com.example.demo.dto.response.PageResponse;
 import com.example.demo.entity.classAndLearn.CourseClass;
 import com.example.demo.entity.gradeAndEvaluate.Exam;
@@ -12,17 +16,21 @@ import com.example.demo.entity.gradeAndEvaluate.ExamQuestion;
 import com.example.demo.entity.gradeAndEvaluate.ExamResult;
 import com.example.demo.entity.gradeAndEvaluate.Grade;
 import com.example.demo.entity.people.Student;
+import com.example.demo.entity.authAndUser.User;
 import com.example.demo.exception.AppException;
 import com.example.demo.exception.ErrorCode;
 import com.example.demo.repository.CourseClassRepository;
+import com.example.demo.repository.EnrollmentRepository;
 import com.example.demo.repository.ExamQuestionRepository;
 import com.example.demo.repository.ExamResultRepository;
 import com.example.demo.repository.ExamRepository;
 import com.example.demo.repository.GradeRepository;
 import com.example.demo.repository.StudentRepository;
 import com.example.demo.repository.SubjectRepository;
+import com.example.demo.repository.UserRepository;
 import com.example.demo.service.k1.AuditLogService;
 import com.example.demo.service.k1.ExamService;
+import com.example.demo.service.notification.NotificationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -59,6 +67,12 @@ public class ExamServiceImpl implements ExamService {
     GradeRepository gradeRepository;
     @Autowired
     StudentRepository studentRepository;
+    @Autowired
+    EnrollmentRepository enrollmentRepository;
+    @Autowired
+    UserRepository userRepository;
+    @Autowired
+    NotificationService notificationService;
 
     @Override
     @PreAuthorize("hasAnyRole('ADMIN','TEACHER')")
@@ -84,10 +98,15 @@ public class ExamServiceImpl implements ExamService {
         if (request.getDuration() != null) {
             exam.setDuration(request.getDuration());
         }
+        Long creatorId = resolveUserId();
+        User creator = userRepository.findById(creatorId)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
+        exam.setCreatedBy(creator);
 
         Exam saved = examRepository.save(exam);
         String subjectName = saved.getSubject() != null ? saved.getSubject().getName() : null;
         auditLogService.logCreate(null, subjectName, username);
+        notifyStudentsNewExam(saved);
         return toResponse(saved);
     }
 
@@ -157,6 +176,64 @@ public class ExamServiceImpl implements ExamService {
     }
 
     @Override
+    @PreAuthorize("hasRole('STUDENT')")
+    public PageResponse<ExamStudentResponse> getMyExams(String status, int page, int size) {
+        String normalized = status == null ? "all" : status.trim().toLowerCase();
+        if (!normalized.equals("all") && !normalized.equals("done") && !normalized.equals("not_done")) {
+            throw new AppException(ErrorCode.INVALID_STATUS);
+        }
+
+        Long studentId = resolveStudentId();
+        if (!studentRepository.existsById(studentId)) {
+            throw new AppException(ErrorCode.USER_NOT_EXISTED);
+        }
+
+        List<Long> classIds = enrollmentRepository.findCourseClassIdsByStudentUserId(studentId);
+        if (classIds.isEmpty()) {
+            return new PageResponse<>(
+                    List.of(),
+                    page,
+                    size,
+                    0,
+                    0
+            );
+        }
+
+        Pageable pageable = PageRequest.of(page, size, Sort.by("examDate").descending().and(Sort.by("id").descending()));
+        Page<Exam> pageResult;
+        if (normalized.equals("done")) {
+            pageResult = examRepository.findDoneByStudent(classIds, studentId, pageable);
+        } else if (normalized.equals("not_done")) {
+            pageResult = examRepository.findNotDoneByStudent(classIds, studentId, pageable);
+        } else {
+            pageResult = examRepository.findByCourseClass_IdIn(classIds, pageable);
+        }
+
+        List<Long> examIds = pageResult.getContent()
+                .stream()
+                .map(Exam::getId)
+                .toList();
+        Map<Long, ExamResult> resultMap = examIds.isEmpty()
+                ? java.util.Collections.emptyMap()
+                : examResultRepository.findByStudent_UserIdAndExam_IdIn(studentId, examIds)
+                .stream()
+                .collect(Collectors.toMap(er -> er.getExam().getId(), Function.identity(), (a, b) -> a));
+
+        List<ExamStudentResponse> data = pageResult.getContent()
+                .stream()
+                .map(exam -> toStudentResponse(exam, resultMap.get(exam.getId())))
+                .toList();
+
+        return new PageResponse<>(
+                data,
+                pageResult.getNumber(),
+                pageResult.getSize(),
+                pageResult.getTotalElements(),
+                pageResult.getTotalPages()
+        );
+    }
+
+    @Override
     @Transactional
     @PreAuthorize("hasRole('STUDENT')")
     public ExamSubmitResponse submitExam(Long examId, ExamSubmitRequest request) {
@@ -170,8 +247,10 @@ public class ExamServiceImpl implements ExamService {
         Student student = studentRepository.findById(studentId)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
 
-        if (exam.getTypeGrade() != TypeGrade.QUIZ
-                && examResultRepository.existsByExam_IdAndStudent_UserId(examId, studentId)) {
+        ExamResult existingResult = examResultRepository
+                .findByExam_IdAndStudent_UserId(examId, studentId)
+                .orElse(null);
+        if (exam.getTypeGrade() != TypeGrade.QUIZ && existingResult != null) {
             throw new AppException(ErrorCode.INVALID_STATUS);
         }
 
@@ -220,9 +299,14 @@ public class ExamServiceImpl implements ExamService {
             grade = gradeRepository.save(grade);
         }
 
-        ExamResult examResult = new ExamResult();
-        examResult.setExam(exam);
-        examResult.setStudent(student);
+        ExamResult examResult;
+        if (exam.getTypeGrade() == TypeGrade.QUIZ && existingResult != null) {
+            examResult = existingResult;
+        } else {
+            examResult = new ExamResult();
+            examResult.setExam(exam);
+            examResult.setStudent(student);
+        }
         examResult.setGrade(grade);
         examResult.setScore(score);
         examResultRepository.save(examResult);
@@ -248,6 +332,27 @@ public class ExamServiceImpl implements ExamService {
                 .build();
     }
 
+    private ExamStudentResponse toStudentResponse(Exam exam, ExamResult result) {
+        return ExamStudentResponse.builder()
+                .id(exam.getId())
+                .courseClassId(exam.getCourseClass() != null ? exam.getCourseClass().getId() : null)
+                .courseClassName(exam.getCourseClass() != null ? exam.getCourseClass().getName() : null)
+                .courseId(exam.getCourseClass() != null && exam.getCourseClass().getCourse() != null
+                        ? exam.getCourseClass().getCourse().getId()
+                        : null)
+                .courseName(exam.getCourseClass() != null && exam.getCourseClass().getCourse() != null
+                        ? exam.getCourseClass().getCourse().getName()
+                        : null)
+                .subjectId(exam.getSubject() != null ? exam.getSubject().getId() : null)
+                .subjectName(exam.getSubject() != null ? exam.getSubject().getName() : null)
+                .typeGrade(exam.getTypeGrade())
+                .examDate(exam.getExamDate())
+                .duration(exam.getDuration())
+                .done(result != null)
+                .score(result != null ? result.getScore() : null)
+                .build();
+    }
+
     private void applyRequest(ExamRequest request, Exam exam) {
         if (request == null) {
             return;
@@ -269,10 +374,41 @@ public class ExamServiceImpl implements ExamService {
     }
 
     private Long resolveStudentId() {
+        return resolveUserId();
+    }
+
+    private Long resolveUserId() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !(auth.getPrincipal() instanceof Jwt jwt)) {
             throw new AppException(ErrorCode.UNAUTHENTICATED);
         }
         return jwt.getClaim("userId");
+    }
+
+    private void notifyStudentsNewExam(Exam exam) {
+        if (exam == null || exam.getCourseClass() == null || exam.getCourseClass().getId() == null) {
+            return;
+        }
+        Long classId = exam.getCourseClass().getId();
+        List<Long> userIds = enrollmentRepository.findStudentUserIdsByCourseClassIdAndStatuses(
+                classId,
+                List.of(EnrollmentStatus.STUDYING)
+        );
+        if (userIds == null || userIds.isEmpty()) {
+            return;
+        }
+        String className = exam.getCourseClass().getName();
+        String title = "Bai kiem tra moi";
+        String content = className == null || className.isBlank()
+                ? "Lop cua ban co bai kiem tra moi."
+                : "Lop " + className + " co bai kiem tra moi.";
+        notificationService.notifyUsers(
+                title,
+                content,
+                NotificationType.EXAM_PUBLISHED,
+                NotificationRefType.EXAM,
+                exam.getId(),
+                userIds
+        );
     }
 }

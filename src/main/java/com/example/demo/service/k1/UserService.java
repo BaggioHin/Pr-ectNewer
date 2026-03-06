@@ -1,6 +1,8 @@
 package com.example.demo.service.k1;
 
+import com.example.demo.dto.request.ChangePasswordRequest;
 import com.example.demo.dto.request.UserRequest;
+import com.example.demo.dto.request.UserUpdateRequest;
 import com.example.demo.dto.response.PageResponse;
 import com.example.demo.dto.response.UserMeResponse;
 import com.example.demo.dto.response.UserResponse;
@@ -21,7 +23,11 @@ public interface UserService {
 
     UserMeResponse getMyInfo();
 
-    String editUser(UserRequest userRequest);
+    String editUser(UserUpdateRequest userRequest);
+
+    String changePassword(ChangePasswordRequest request);
+
+    String requestPasswordResetForCurrentUser();
 
     Long addUser(UserRequest userRequest);
 

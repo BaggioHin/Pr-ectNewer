@@ -189,7 +189,7 @@ public class AdminStatsServiceImpl implements AdminStatsService {
         java.time.LocalDate startDate = start.toLocalDate();
         java.time.LocalDate endDate = end.toLocalDate();
         long suspendedEnrollments = enrollmentRepository.countByUpdatedAtBetweenAndStatus(
-                startDate, endDate, EnrollmentStatus.SUSPENDED);
+                  startDate, endDate, EnrollmentStatus.SUSPENDED);
         long totalAttendance = attendanceRepository.count();
         double postponeRate = totalAttendance == 0
                 ? 0.0

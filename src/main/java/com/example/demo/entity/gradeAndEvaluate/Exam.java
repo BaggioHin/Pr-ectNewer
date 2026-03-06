@@ -1,6 +1,7 @@
 package com.example.demo.entity.gradeAndEvaluate;
 
 import com.example.demo.constant.TypeGrade;
+import com.example.demo.entity.authAndUser.User;
 import com.example.demo.entity.classAndLearn.CourseClass;
 import com.example.demo.entity.courseAndAcademic.Subject;
 import jakarta.persistence.*;
@@ -42,6 +43,10 @@ public class Exam {
 
     @Min(1)
     private int duration;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by")
+    private User createdBy;
 
     @OneToMany(mappedBy = "exam")
     private List<ExamResult> examResults;

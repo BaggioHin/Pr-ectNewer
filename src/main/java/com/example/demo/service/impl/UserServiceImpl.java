@@ -3,13 +3,16 @@ package com.example.demo.service.impl;
 import com.example.demo.constant.CreateType;
 import com.example.demo.constant.StatusUser;
 import com.example.demo.dto.request.CloudinaryUploadResult;
+import com.example.demo.dto.request.ChangePasswordRequest;
 import com.example.demo.dto.request.UserRequest;
+import com.example.demo.dto.request.UserUpdateRequest;
 import com.example.demo.dto.response.PageResponse;
 import com.example.demo.dto.response.UserMeResponse;
 import com.example.demo.dto.response.UserResponse;
 import com.example.demo.entity.authAndUser.Role;
 import com.example.demo.entity.authAndUser.User;
 import com.example.demo.entity.authAndUser.UserProfile;
+import com.example.demo.entity.authAndUser.PasswordResetToken;
 import com.example.demo.entity.people.Student;
 import com.example.demo.entity.people.Teacher;
 import com.example.demo.entity.sales.Saler;
@@ -19,6 +22,7 @@ import com.example.demo.mapper.UserMapper;
 import com.example.demo.mapper.UserProfileMapper;
 import com.example.demo.repository.*;
 import com.example.demo.service.CloudinaryService;
+import com.example.demo.service.EmailService;
 import com.example.demo.service.k1.AuditLogService;
 import com.example.demo.service.k1.AdminStatsService;
 import com.example.demo.service.k1.UserService;
@@ -36,7 +40,11 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.beans.factory.annotation.Value;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -71,6 +79,16 @@ public class UserServiceImpl implements UserService {
     AuditLogService auditLogService;
     @Autowired
     AdminStatsService adminStatsService;
+    @Autowired
+    PasswordResetTokenRepository passwordResetTokenRepository;
+    @Autowired
+    EmailService emailService;
+
+    @Value("${app.reset-password-url:http://localhost:5173/reset-password}")
+    private String resetPasswordUrl;
+
+    @Value("${app.reset-password-exp-minutes:30}")
+    private long resetPasswordExpMinutes;
 
     @Override
     @PreAuthorize("isAuthenticated() and (#id == authentication.principal.claims['userId'] or hasAuthority('ADMIN'))")
@@ -82,6 +100,7 @@ public class UserServiceImpl implements UserService {
             throw new AppException(ErrorCode.USERPROFILE_NOT_EXISTED);
         }
         UserResponse response = userMapper.userToUserResponse(profile);
+        response.setUserId(user.getId());
         response.setId(resolveUserCode(user));
         return response;
     }
@@ -89,14 +108,20 @@ public class UserServiceImpl implements UserService {
     @Override
     @PreAuthorize("hasAnyRole('ADMIN','SALER')")
     public List<UserResponse> getUserByName(String name) {
-        List<UserProfile> userProfile = userProfileRepository.findByName(name);
-        List<UserResponse> responses = userMapper.userToUserResponses(userProfile);
-        for (int i = 0; i < responses.size(); i++) {
-            UserProfile profile = userProfile.get(i);
-            UserResponse response = responses.get(i);
-            response.setId(resolveUserCode(profile.getUser()));
+        List<User> users = userRepository.findByProfileName(name);
+        for (User user : users) {
+            if (user == null) {
+                continue;
+            }
+            log.info("SearchByName name={} userId={} email={} phone={}",
+                    name,
+                    user.getId(),
+                    user.getEmail(),
+                    user.getPhone());
         }
-        return responses;
+        return users.stream()
+                .map(this::toUserResponseFromUser)
+                .toList();
     }
 
     @Override
@@ -129,6 +154,9 @@ public class UserServiceImpl implements UserService {
         for (int i = 0; i < data.size(); i++) {
             UserProfile profile = profiles.get(i);
             UserResponse response = data.get(i);
+            if (profile.getUser() != null) {
+                response.setUserId(profile.getUser().getId());
+            }
             response.setId(resolveUserCode(profile.getUser()));
         }
 
@@ -163,7 +191,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @PreAuthorize("isAuthenticated()")
-    public String editUser(UserRequest userRequest) {
+    public String editUser(UserUpdateRequest userRequest) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         Jwt jwt = (Jwt) auth.getPrincipal();
         Long userId = jwt.getClaim("userId");
@@ -192,6 +220,60 @@ public class UserServiceImpl implements UserService {
         userRepository.save(user);
         userProfileRepository.save(userProfile);
         return "Edit successful!";
+    }
+
+    @Override
+    @PreAuthorize("isAuthenticated()")
+    public String changePassword(ChangePasswordRequest request) {
+        if (request == null || request.getOldPassword() == null || request.getNewPassword() == null) {
+            throw new AppException(ErrorCode.IMFORMATION_NULL);
+        }
+        if (request.getOldPassword().isBlank() || request.getNewPassword().isBlank()) {
+            throw new AppException(ErrorCode.INVALID_PASSWORD);
+        }
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        Jwt jwt = (Jwt) auth.getPrincipal();
+        Long userId = jwt.getClaim("userId");
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
+        if (!passwordEncoder.matches(request.getOldPassword(), user.getPassword())) {
+            throw new AppException(ErrorCode.OLD_PASSWORD_INCORRECT);
+        }
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        user.setUpdatedAt(LocalDateTime.now());
+        userRepository.save(user);
+        return "Change password successful!";
+    }
+
+    @Override
+    @PreAuthorize("isAuthenticated()")
+    public String requestPasswordResetForCurrentUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        Jwt jwt = (Jwt) auth.getPrincipal();
+        Long userId = jwt.getClaim("userId");
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
+        if (user.getEmail() == null || user.getEmail().isBlank()) {
+            throw new AppException(ErrorCode.IMFORMATION_NULL);
+        }
+
+        passwordResetTokenRepository.deleteByUser_Id(user.getId());
+        String rawToken = java.util.UUID.randomUUID().toString().replace("-", "");
+        String tokenHash = hashToken(rawToken);
+        LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(resetPasswordExpMinutes);
+        PasswordResetToken token = PasswordResetToken.builder()
+                .user(user)
+                .tokenHash(tokenHash)
+                .expiresAt(expiresAt)
+                .used(false)
+                .build();
+        passwordResetTokenRepository.save(token);
+
+        String link = resetPasswordUrl + "?token=" + rawToken;
+        emailService.sendResetPasswordEmail(user.getEmail(), link);
+        return "If the email exists, a reset link has been sent.";
     }
 
     @Override
@@ -342,6 +424,20 @@ public class UserServiceImpl implements UserService {
         return prefix + String.format("%0" + width + "d", next);
     }
 
+    private String hashToken(String raw) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(raw.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     @PreAuthorize("hasAuthority('ADMIN')")
     @Override
     public String deleteUser(Long id) {
@@ -392,5 +488,26 @@ public class UserServiceImpl implements UserService {
             return user.getSale() == null ? null : user.getSale().getCode();
         }
         return user.getId() == null ? null : user.getId().toString();
+    }
+
+    private UserResponse toUserResponseFromUser(User user) {
+        if (user == null) {
+            return null;
+        }
+        UserProfile profile = user.getProfile();
+        UserResponse response = UserResponse.builder()
+                .id(resolveUserCode(user))
+                .userId(user.getId())
+                .name(profile != null ? profile.getName() : null)
+                .dob(profile != null ? profile.getDob() : null)
+                .email(user.getEmail())
+                .phone(user.getPhone())
+                .avatar(profile != null ? profile.getAvatarUrl() : null)
+                .bio(profile != null ? profile.getBio() : null)
+                .lastLogin(profile != null ? profile.getLastLogin() : null)
+                .theme(profile != null ? profile.getTheme() : null)
+                .language(profile != null ? profile.getLanguage() : null)
+                .build();
+        return response;
     }
 }

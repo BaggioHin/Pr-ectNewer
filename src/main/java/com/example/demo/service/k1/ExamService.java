@@ -4,6 +4,7 @@ import com.example.demo.dto.request.ExamRequest;
 import com.example.demo.dto.request.ExamSubmitRequest;
 import com.example.demo.dto.response.ExamResponse;
 import com.example.demo.dto.response.ExamSubmitResponse;
+import com.example.demo.dto.response.ExamStudentResponse;
 import com.example.demo.dto.response.PageResponse;
 
 import java.util.List;
@@ -23,4 +24,6 @@ public interface ExamService {
     List<ExamResponse> getExamByCourseClassName(String name);
 
     ExamSubmitResponse submitExam(Long examId, ExamSubmitRequest request);
+
+    PageResponse<ExamStudentResponse> getMyExams(String status, int page, int size);
 }

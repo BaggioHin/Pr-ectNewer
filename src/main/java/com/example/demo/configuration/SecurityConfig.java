@@ -26,6 +26,8 @@ import java.util.List;
 public class SecurityConfig {
     private final String[] PUBLIC_ENDPOINTS = {
             "/api/products/check","/users", "/auth/token", "/auth/introspect", "/auth/logout", "/auth/refreshToken",
+            "/auth/forgot-password", "/auth/reset-password",
+            "/payments/vnpay/return", "/payments/vnpay/ipn",
             "/admin/debug/auth","/admin/debug","/courses/{id}","/courses/search","/courses","/user",
             "/swagger-ui/**","/Subject/{id}","/Subject/{name}","/Subject/{page}",
             "/v3/api-docs/**","/users/"

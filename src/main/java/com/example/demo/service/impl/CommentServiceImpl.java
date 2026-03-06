@@ -3,13 +3,18 @@ package com.example.demo.service.impl;
 import com.example.demo.dto.request.CommentRequest;
 import com.example.demo.dto.response.CommentResponse;
 import com.example.demo.dto.response.PageResponse;
+import com.example.demo.constant.NotificationRefType;
+import com.example.demo.constant.NotificationType;
+import com.example.demo.entity.authAndUser.User;
 import com.example.demo.entity.gradeAndEvaluate.Comment;
 import com.example.demo.entity.gradeAndEvaluate.ExamQuestion;
 import com.example.demo.exception.AppException;
 import com.example.demo.exception.ErrorCode;
 import com.example.demo.repository.CommentRepository;
 import com.example.demo.repository.ExamQuestionRepository;
+import com.example.demo.repository.UserRepository;
 import com.example.demo.service.k1.CommentService;
+import com.example.demo.service.notification.NotificationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -27,6 +32,12 @@ public class CommentServiceImpl implements CommentService {
 
     @Autowired
     private ExamQuestionRepository examQuestionRepository;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private NotificationService notificationService;
 
     @Override
     public CommentResponse getCommentById(Long id) {
@@ -80,6 +91,8 @@ public class CommentServiceImpl implements CommentService {
         comment.setParentId(request.getParentId());
 
         Comment saved = commentRepository.save(comment);
+        notifyExamCreatorIfStudentComment(saved, question, request.getUserId());
+        notifyParentCommentIfReply(saved, request.getUserId());
         return toResponse(saved);
     }
 
@@ -125,5 +138,62 @@ public class CommentServiceImpl implements CommentService {
                 .parentId(comment.getParentId())
                 .createdAt(comment.getCreatedAt())
                 .build();
+    }
+
+    private void notifyExamCreatorIfStudentComment(Comment saved, ExamQuestion question, Long commenterId) {
+        if (commenterId == null) {
+            return;
+        }
+        User commenter = userRepository.findById(commenterId).orElse(null);
+        if (commenter == null) {
+            return;
+        }
+        boolean isStudent = commenter.getRoles().stream()
+                .anyMatch(role -> "STUDENT".equals(role.getName()));
+        if (!isStudent) {
+            return;
+        }
+        if (question.getExam() == null || question.getExam().getCreatedBy() == null) {
+            return;
+        }
+        Long creatorId = question.getExam().getCreatedBy().getId();
+        if (creatorId == null || creatorId.equals(commenterId)) {
+            return;
+        }
+
+        String title = "Binh luan moi trong bai kiem tra";
+        String content = "Hoc vien vua binh luan trong bai kiem tra cua ban.";
+        notificationService.notifyUsers(
+                title,
+                content,
+                NotificationType.QUESTION_COMMENT,
+                NotificationRefType.COMMENT,
+                saved.getId(),
+                List.of(creatorId)
+        );
+    }
+
+    private void notifyParentCommentIfReply(Comment saved, Long commenterId) {
+        if (saved == null || saved.getParentId() == null || commenterId == null) {
+            return;
+        }
+        Comment parent = commentRepository.findById(saved.getParentId()).orElse(null);
+        if (parent == null) {
+            return;
+        }
+        Long parentUserId = parent.getUserId();
+        if (parentUserId == null || parentUserId.equals(commenterId)) {
+            return;
+        }
+        String title = "Tra loi binh luan moi";
+        String content = "Ban co mot tra loi moi trong binh luan.";
+        notificationService.notifyUsers(
+                title,
+                content,
+                NotificationType.COMMENT_REPLY,
+                NotificationRefType.COMMENT,
+                saved.getId(),
+                List.of(parentUserId)
+        );
     }
 }
